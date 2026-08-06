@@ -1,0 +1,152 @@
+name: Bug report
+description: Report a problem with NODUS.
+title: "[Bug]: "
+labels: ["bug", "needs reproduction"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. NODUS is pre-alpha — please include
+        as much detail as you can so the problem can be reproduced.
+
+        Do not include API keys, private prompts, personal information,
+        or model files anywhere in this report.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem clearly and concisely.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps that reliably trigger the problem.
+      placeholder: |
+        1. Open NODUS
+        2. Go to ...
+        3. Select ...
+        4. Observe the problem
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect NODUS to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or recordings
+      description: >
+        Add screenshots or a short screen recording when useful. Do not
+        include API keys, private prompts, or personal information.
+
+  - type: input
+    id: nodus-version
+    attributes:
+      label: NODUS version
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Computer architecture
+      options:
+        - Apple Silicon (ARM64)
+        - Intel (x64)
+        - Other ARM64
+        - Other x64
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Installation method
+      options:
+        - Prebuilt package (DMG/MSI/AppImage/etc.)
+        - Source build
+        - Other
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Local runtime (if applicable)
+      options:
+        - None / not using a local runtime
+        - Ollama
+        - llama.cpp
+        - LM Studio
+        - Other
+
+  - type: input
+    id: runtime-version
+    attributes:
+      label: Runtime version
+
+  - type: input
+    id: model
+    attributes:
+      label: Model
+
+  - type: input
+    id: model-size
+    attributes:
+      label: Model size or quantisation
+
+  - type: input
+    id: theme
+    attributes:
+      label: Theme
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste only the relevant error message or log excerpt.
+      render: text
+
+  - type: checkboxes
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: This report is ready for triage when all of these are true.
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I included steps that reliably reproduce the problem.
+          required: true
+        - label: I confirmed this report contains no API keys, prompts, or personal data.
+          required: true

@@ -1,0 +1,13 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question or start a discussion
+    url: https://github.com/SuryadevChippada/NODUS/discussions
+    about: >
+      For "how do I...?" questions, general feedback, or anything that
+      isn't a confirmed bug or a concrete feature request, please use
+      Discussions instead of an Issue.
+  - name: Report a security vulnerability
+    url: https://github.com/SuryadevChippada/NODUS/security
+    about: >
+      Do not report security vulnerabilities as a public issue. Use
+      GitHub's private vulnerability reporting instead.

@@ -1,0 +1,93 @@
+name: Local model / provider request
+description: Request support for a local runtime, model format, or AI provider.
+title: "[Provider]: "
+labels: ["provider"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste private API keys, cookies, browser session tokens,
+        or account credentials anywhere in this request.
+
+  - type: input
+    id: provider-name
+    attributes:
+      label: Provider or runtime name
+      placeholder: "Ollama, llama.cpp, LM Studio, OpenAI-compatible server, ..."
+    validations:
+      required: true
+
+  - type: input
+    id: docs-link
+    attributes:
+      label: Official website or documentation
+
+  - type: dropdown
+    id: connection-type
+    attributes:
+      label: Connection type
+      options:
+        - Local application
+        - Local HTTP server
+        - Managed local process
+        - Cloud API
+        - OpenAI-compatible API
+        - Model file format
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: capabilities
+    attributes:
+      label: Requested capability
+      description: Select all that apply.
+      options:
+        - label: Detect runtime health
+        - label: List available models
+        - label: Stream responses
+        - label: Cancel generation
+        - label: Structured output
+        - label: Tool calling
+        - label: Vision input
+        - label: Model download
+        - label: Model deletion
+        - label: Model unloading
+        - label: GGUF import
+        - label: Custom base URL
+        - label: Authentication
+        - label: Other
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why should NODUS support this?
+      description: Explain the use case and why existing providers are insufficient.
+    validations:
+      required: true
+
+  - type: textarea
+    id: api-info
+    attributes:
+      label: API or protocol information
+      description: >
+        Links to official API documentation. Do not paste private API
+        keys, cookies, browser session tokens, or account credentials.
+
+  - type: input
+    id: example-endpoint
+    attributes:
+      label: Example endpoint
+      placeholder: "http://127.0.0.1:PORT"
+
+  - type: checkboxes
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      options:
+        - label: I searched existing issues for this provider or runtime.
+          required: true
+        - label: I linked official API or protocol documentation where available.
+          required: true
+        - label: I confirmed this request contains no credentials or tokens.
+          required: true

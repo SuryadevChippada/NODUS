@@ -1,0 +1,97 @@
+name: Feature request
+description: Suggest an idea for NODUS.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, private prompts, or personal information
+        anywhere in this request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: >
+        What problem would this feature solve? Describe the current
+        limitation or difficulty rather than only describing the feature.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How do you think this should work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Example workflow
+      placeholder: |
+        1. The user ...
+        2. NODUS ...
+        3. The result ...
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: area
+    attributes:
+      label: Area of NODUS
+      description: Select all that apply.
+      options:
+        - label: Graph and nodes
+        - label: Local models
+        - label: Cloud API providers
+        - label: Identities
+        - label: Themes and appearance
+        - label: Fonts
+        - label: Activity calendar
+        - label: Contribution heatmap
+        - label: Focus sessions
+        - label: Import or export
+        - label: Privacy or security
+        - label: Accessibility
+        - label: Performance
+        - label: Packaging or installation
+        - label: Other
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any alternative solutions or workarounds you considered.
+
+  - type: textarea
+    id: visual
+    attributes:
+      label: Visual example
+      description: Add a sketch, screenshot, or mock-up when useful.
+
+  - type: textarea
+    id: who-benefits
+    attributes:
+      label: Who would benefit?
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+
+  - type: checkboxes
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      options:
+        - label: I searched existing Issues and Discussions for this idea.
+          required: true
+        - label: This request describes one focused feature.
+          required: true
+        - label: I explained the underlying problem, not just the feature.
+          required: true
+        - label: I understand that submitting a request does not guarantee implementation.
+          required: true
