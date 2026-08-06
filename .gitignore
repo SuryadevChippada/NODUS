@@ -23,6 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# subagent-driven-development scratch workspace
+# subagent-driven-development scratch workspace and planning docs
+# (internal AI-assisted workflow artifacts, not part of the public project)
 .worktrees/
 .superpowers/
+docs/superpowers/
