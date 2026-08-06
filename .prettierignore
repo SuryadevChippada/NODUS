@@ -1,0 +1,24 @@
+# Ignore directories and files outside Task 1 scope (frontend tooling)
+.github/
+docs/
+src-tauri/
+README.md
+CHANGELOG.md
+LICENSE
+
+# Ignore node_modules and other common directories
+node_modules/
+.next/
+dist/
+build/
+coverage/
+.git/
+.vscode/
+.idea/
+
+# Only format frontend source files
+!src/
+!vite.config.ts
+!vitest.config.ts
+!tsconfig.json
+!.eslintrc.cjs
