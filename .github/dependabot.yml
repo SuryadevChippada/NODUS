@@ -1,16 +1,57 @@
 version: 2
+
 updates:
+  # React, TypeScript, Vite and frontend dependencies
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "deps"
+    groups:
+      frontend-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
+  # Rust and Tauri dependencies
   - package-ecosystem: "cargo"
     directory: "/src-tauri"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "09:15"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "deps"
+    groups:
+      rust-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
+  # Actions used by CI and release workflows
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "09:30"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
