@@ -1,9 +1,19 @@
-import { describe, it, expect, beforeEach, beforeAll } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, beforeEach, beforeAll, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { GraphCanvas } from "./GraphCanvas";
 import { useGraphStore } from "../store/graphStore";
 import { sampleNodes, sampleEdges } from "../lib/sampleGraph";
+
+// The "+ New" button exercises the store's addNode, which is gated on a
+// non-null sessionId (same gate every other write path in the store uses)
+// and fires off a real db.insertNode() write. Mock the db module — same
+// pattern as src/store/graphStore.test.ts — so that write doesn't fall
+// through to the real @tauri-apps/plugin-sql, which isn't available here.
+vi.mock("../lib/db", () => ({
+  insertNode: vi.fn().mockResolvedValue(undefined),
+  insertEdge: vi.fn().mockResolvedValue(undefined),
+}));
 
 // jsdom has no layout engine: elements always report 0 offsetWidth/Height,
 // so @xyflow/react's ResizeObserver-driven node measurement never
@@ -54,7 +64,11 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  useGraphStore.setState({ nodes: sampleNodes, edges: sampleEdges });
+  useGraphStore.setState({
+    sessionId: "test-session",
+    nodes: sampleNodes,
+    edges: sampleEdges,
+  });
 });
 
 describe("GraphCanvas", () => {
@@ -77,5 +91,16 @@ describe("GraphCanvas", () => {
     );
     const edgeElements = container.querySelectorAll(".react-flow__edge");
     expect(edgeElements).toHaveLength(sampleEdges.length);
+  });
+
+  it('creates a new root node when the "+ New" button is clicked', () => {
+    render(
+      <ReactFlowProvider>
+        <GraphCanvas />
+      </ReactFlowProvider>,
+    );
+    const before = useGraphStore.getState().nodes.length;
+    fireEvent.click(screen.getByRole("button", { name: /\+ new/i }));
+    expect(useGraphStore.getState().nodes.length).toBe(before + 1);
   });
 });
