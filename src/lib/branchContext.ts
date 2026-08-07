@@ -45,7 +45,7 @@ export function buildBranchContext(
     options?.maxMessages !== undefined &&
     messages.length > options.maxMessages
   ) {
-    return messages.slice(-options.maxMessages);
+    return messages.slice(messages.length - options.maxMessages);
   }
 
   return messages;

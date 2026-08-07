@@ -87,4 +87,11 @@ describe("buildBranchContext", () => {
     });
     expect(result.map((m) => m.nodeId)).toEqual(["root", "mid", "leaf"]);
   });
+
+  it("returns an empty array when maxMessages is 0", () => {
+    const result = buildBranchContext("leaf", nodes, edges, {
+      maxMessages: 0,
+    });
+    expect(result).toEqual([]);
+  });
 });
