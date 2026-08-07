@@ -120,6 +120,18 @@ export async function updateNodePosition(
   );
 }
 
+export async function updateNodeText(
+  nodeId: string,
+  text: string,
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE nodes SET text = $1, updated_at = $2 WHERE id = $3",
+    [text, now, nodeId],
+  );
+}
+
 export async function deleteNode(nodeId: string): Promise<void> {
   const db = await getDb();
   await db.execute("DELETE FROM nodes WHERE id = $1", [nodeId]);

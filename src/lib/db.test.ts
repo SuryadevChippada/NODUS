@@ -21,6 +21,7 @@ import {
   loadSessionGraph,
   insertNode,
   updateNodePosition,
+  updateNodeText,
   deleteNode,
   insertEdge,
   deleteEdge,
@@ -126,5 +127,15 @@ describe("write operations use parameterized SQL", () => {
     const [sql, values] = mockExecute.mock.calls[1];
     expect(sql.toUpperCase()).toContain("DELETE");
     expect(values).toEqual(["e1"]);
+  });
+});
+
+describe("updateNodeText", () => {
+  it("updates only the text and updated_at columns for the given id", async () => {
+    await updateNodeText("n1", "edited text");
+    const [sql, values] = mockExecute.mock.calls[0];
+    expect(sql.toUpperCase()).toContain("UPDATE");
+    expect(sql).not.toContain("edited text");
+    expect(values).toEqual(expect.arrayContaining(["edited text", "n1"]));
   });
 });
