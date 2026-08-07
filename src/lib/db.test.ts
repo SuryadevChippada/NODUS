@@ -22,6 +22,7 @@ import {
   insertNode,
   updateNodePosition,
   updateNodeText,
+  updateNodeAnswer,
   deleteNode,
   insertEdge,
   deleteEdge,
@@ -137,5 +138,60 @@ describe("updateNodeText", () => {
     expect(sql.toUpperCase()).toContain("UPDATE");
     expect(sql).not.toContain("edited text");
     expect(values).toEqual(expect.arrayContaining(["edited text", "n1"]));
+  });
+});
+
+describe("updateNodeAnswer", () => {
+  it("persists text and JSON-serialized suggested branches", async () => {
+    await updateNodeAnswer("n1", "the answer", [{ label: "L", prompt: "P" }]);
+    const [sql, values] = mockExecute.mock.calls[0];
+    expect(sql.toUpperCase()).toContain("UPDATE");
+    expect(values).toContain("the answer");
+    expect(values).toContain(JSON.stringify([{ label: "L", prompt: "P" }]));
+  });
+
+  it("persists null suggested branches as SQL NULL, not the string 'null'", async () => {
+    await updateNodeAnswer("n1", "the answer", null);
+    const [, values] = mockExecute.mock.calls[0];
+    expect(values).toContain(null);
+    expect(values).not.toContain("null");
+  });
+});
+
+describe("loadSessionGraph with suggested_branches", () => {
+  it("parses a stored JSON suggested_branches column back into data.suggestedBranches", async () => {
+    mockSelect
+      .mockResolvedValueOnce([
+        {
+          id: "n1",
+          type: "response",
+          text: "answer",
+          position_x: 0,
+          position_y: 0,
+          suggested_branches: JSON.stringify([{ label: "L", prompt: "P" }]),
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const { nodes } = await loadSessionGraph("session-1");
+    expect(nodes[0].data.suggestedBranches).toEqual([
+      { label: "L", prompt: "P" },
+    ]);
+  });
+
+  it("leaves data.suggestedBranches undefined when the column is null", async () => {
+    mockSelect
+      .mockResolvedValueOnce([
+        {
+          id: "n1",
+          type: "prompt",
+          text: "question",
+          position_x: 0,
+          position_y: 0,
+          suggested_branches: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const { nodes } = await loadSessionGraph("session-1");
+    expect(nodes[0].data.suggestedBranches).toBeUndefined();
   });
 });

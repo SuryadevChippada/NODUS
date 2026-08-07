@@ -17,9 +17,15 @@ import {
   getParentId,
   getDescendantIds,
 } from "../lib/graphTraversal";
+import { generateMockResponse } from "../lib/providers/mockProvider";
+import { buildBranchContext } from "../lib/branchContext";
 
 const POSITION_SAVE_DEBOUNCE_MS = 400;
 const positionSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+const TEXT_STREAM_PERSIST_DEBOUNCE_MS = 400;
+let streamPersistTimer: ReturnType<typeof setTimeout> | null = null;
+let activeAbortController: AbortController | null = null;
 
 // Memoized in-flight/completed hydrate() promise, same pattern as getDb() in
 // src/lib/db.ts. Without this, React StrictMode's double-invoked effect (or
@@ -46,12 +52,16 @@ interface GraphState {
   updateNodeText: (nodeId: string, text: string) => void;
   deleteNodeWithDescendants: (nodeId: string) => void;
   deleteNodeAndReparentChildren: (nodeId: string) => void;
+  generatingNodeId: string | null;
+  generateResponse: (promptNodeId: string) => Promise<void>;
+  cancelGeneration: () => void;
 }
 
 export const useGraphStore = create<GraphState>((set, get) => ({
   sessionId: null,
   nodes: sampleNodes,
   edges: sampleEdges,
+  generatingNodeId: null,
 
   hydrate: () => {
     if (!hydratePromise) {
@@ -273,5 +283,120 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         );
       }
     }
+  },
+
+  generateResponse: async (promptNodeId) => {
+    const sessionId = get().sessionId;
+    if (!sessionId) return;
+
+    const responseNodeId = crypto.randomUUID();
+    const promptNode = get().nodes.find((node) => node.id === promptNodeId);
+    const position = promptNode
+      ? { x: promptNode.position.x, y: promptNode.position.y + 160 }
+      : { x: 0, y: 0 };
+
+    const responseNode: GraphNode = {
+      id: responseNodeId,
+      type: "response",
+      position,
+      data: { text: "" },
+    };
+    const responseEdge: Edge = {
+      id: crypto.randomUUID(),
+      source: promptNodeId,
+      target: responseNodeId,
+    };
+
+    set({
+      nodes: [...get().nodes, responseNode],
+      edges: [...get().edges, responseEdge],
+      generatingNodeId: responseNodeId,
+    });
+    db.insertNode(sessionId, responseNode).catch((error) =>
+      console.error("Failed to persist new response node", error),
+    );
+    db.insertEdge(sessionId, responseEdge).catch((error) =>
+      console.error("Failed to persist new response edge", error),
+    );
+
+    const abortController = new AbortController();
+    activeAbortController = abortController;
+
+    // get().nodes is typed Node<GraphNodeData>[] (xyflow's `type` is a bare
+    // string) but every node the store ever creates is "prompt" or
+    // "response" — narrow with a real type guard rather than casting so
+    // buildBranchContext's GraphNode[] param stays honest.
+    const context = buildBranchContext(
+      promptNodeId,
+      get().nodes.filter(
+        (node): node is GraphNode =>
+          node.type === "prompt" || node.type === "response",
+      ),
+      get().edges,
+    );
+
+    try {
+      const result = await generateMockResponse(context, {
+        signal: abortController.signal,
+        onToken: (chunk) => {
+          set({
+            nodes: get().nodes.map((node) =>
+              node.id === responseNodeId
+                ? { ...node, data: { text: node.data.text + chunk } }
+                : node,
+            ),
+          });
+
+          if (streamPersistTimer) clearTimeout(streamPersistTimer);
+          streamPersistTimer = setTimeout(() => {
+            const currentText = get().nodes.find((n) => n.id === responseNodeId)
+              ?.data.text;
+            if (currentText !== undefined) {
+              db.updateNodeText(responseNodeId, currentText).catch((error) =>
+                console.error("Failed to persist streaming text", error),
+              );
+            }
+            streamPersistTimer = null;
+          }, TEXT_STREAM_PERSIST_DEBOUNCE_MS);
+        },
+      });
+
+      if (streamPersistTimer) {
+        clearTimeout(streamPersistTimer);
+        streamPersistTimer = null;
+      }
+
+      set({
+        nodes: get().nodes.map((node) =>
+          node.id === responseNodeId
+            ? {
+                ...node,
+                data: {
+                  text: result.answer,
+                  suggestedBranches: result.suggestedBranches,
+                },
+              }
+            : node,
+        ),
+      });
+      db.updateNodeAnswer(
+        responseNodeId,
+        result.answer,
+        result.suggestedBranches,
+      ).catch((error) =>
+        console.error("Failed to persist final response", error),
+      );
+    } catch (error) {
+      console.error("Generation failed or was cancelled", error);
+    } finally {
+      activeAbortController = null;
+      if (get().generatingNodeId === responseNodeId) {
+        set({ generatingNodeId: null });
+      }
+    }
+  },
+
+  cancelGeneration: () => {
+    activeAbortController?.abort();
   },
 }));

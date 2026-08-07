@@ -9,10 +9,11 @@ fn greet(name: &str) -> String {
 const DB_URL: &str = "sqlite:nodus.db";
 
 fn migrations() -> Vec<Migration> {
-    vec![Migration {
-        version: 1,
-        description: "create workspaces, sessions, nodes, edges",
-        sql: r#"
+    vec![
+        Migration {
+            version: 1,
+            description: "create workspaces, sessions, nodes, edges",
+            sql: r#"
             CREATE TABLE workspaces (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -50,8 +51,15 @@ fn migrations() -> Vec<Migration> {
             );
             CREATE INDEX idx_edges_session_id ON edges(session_id);
         "#,
-        kind: MigrationKind::Up,
-    }]
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "add suggested_branches to nodes",
+            sql: "ALTER TABLE nodes ADD COLUMN suggested_branches TEXT;",
+            kind: MigrationKind::Up,
+        },
+    ]
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

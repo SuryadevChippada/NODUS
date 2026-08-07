@@ -1,5 +1,6 @@
 import Database from "@tauri-apps/plugin-sql";
 import type { GraphNode, GraphEdge } from "../types/graph";
+import type { SuggestedBranch } from "../types/provider";
 
 const DB_URL = "sqlite:nodus.db";
 
@@ -59,9 +60,10 @@ export async function loadSessionGraph(
       text: string;
       position_x: number;
       position_y: number;
+      suggested_branches: string | null;
     }[]
   >(
-    "SELECT id, type, text, position_x, position_y FROM nodes WHERE session_id = $1",
+    "SELECT id, type, text, position_x, position_y, suggested_branches FROM nodes WHERE session_id = $1",
     [sessionId],
   );
   const edgeRows = await db.select<
@@ -75,7 +77,12 @@ export async function loadSessionGraph(
     id: row.id,
     type: row.type as "prompt" | "response",
     position: { x: row.position_x, y: row.position_y },
-    data: { text: row.text },
+    data: {
+      text: row.text,
+      suggestedBranches: row.suggested_branches
+        ? JSON.parse(row.suggested_branches)
+        : undefined,
+    },
   }));
   const edges: GraphEdge[] = edgeRows.map((row) => ({
     id: row.id,
@@ -93,8 +100,8 @@ export async function insertNode(
   const db = await getDb();
   const now = new Date().toISOString();
   await db.execute(
-    `INSERT INTO nodes (id, session_id, type, text, position_x, position_y, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    `INSERT INTO nodes (id, session_id, type, text, position_x, position_y, suggested_branches, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
     [
       node.id,
       sessionId,
@@ -102,6 +109,9 @@ export async function insertNode(
       node.data.text,
       node.position.x,
       node.position.y,
+      node.data.suggestedBranches
+        ? JSON.stringify(node.data.suggestedBranches)
+        : null,
       now,
       now,
     ],
@@ -129,6 +139,24 @@ export async function updateNodeText(
   await db.execute(
     "UPDATE nodes SET text = $1, updated_at = $2 WHERE id = $3",
     [text, now, nodeId],
+  );
+}
+
+export async function updateNodeAnswer(
+  nodeId: string,
+  text: string,
+  suggestedBranches: SuggestedBranch[] | null,
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE nodes SET text = $1, suggested_branches = $2, updated_at = $3 WHERE id = $4",
+    [
+      text,
+      suggestedBranches ? JSON.stringify(suggestedBranches) : null,
+      now,
+      nodeId,
+    ],
   );
 }
 

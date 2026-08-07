@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { suggestedBranchSchema } from "./provider";
 
 export const nodeDataSchema = z.object({
   text: z.string().min(1),
+  suggestedBranches: z.array(suggestedBranchSchema).optional(),
 });
 
 export const graphNodeSchema = z.object({

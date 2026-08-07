@@ -74,12 +74,18 @@ vi.mock("../lib/db", () => ({
   insertNode: vi.fn().mockResolvedValue(undefined),
   updateNodePosition: vi.fn().mockResolvedValue(undefined),
   updateNodeText: vi.fn().mockResolvedValue(undefined),
+  updateNodeAnswer: vi.fn().mockResolvedValue(undefined),
   deleteNode: vi.fn().mockResolvedValue(undefined),
   insertEdge: vi.fn().mockResolvedValue(undefined),
   deleteEdge: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../lib/providers/mockProvider", () => ({
+  generateMockResponse: vi.fn(),
+}));
+
 import * as db from "../lib/db";
+import { generateMockResponse } from "../lib/providers/mockProvider";
 
 describe("useGraphStore hydration", () => {
   beforeEach(() => {
@@ -461,5 +467,114 @@ describe("useGraphStore delete actions", () => {
     // b and d had no parent to reconnect to — they simply lose their edge from a
     expect(state.edges.map((e) => e.id)).toEqual(["e2"]);
     expect(vi.mocked(db.insertEdge)).not.toHaveBeenCalled();
+  });
+});
+
+describe("useGraphStore.generateResponse", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useGraphStore.setState({
+      sessionId: "s1",
+      generatingNodeId: null,
+      nodes: [
+        {
+          id: "p1",
+          type: "prompt",
+          position: { x: 0, y: 0 },
+          data: { text: "question" },
+        },
+      ],
+      edges: [],
+    });
+  });
+
+  it("creates a connected response node and marks it as generating", async () => {
+    let resolveGenerate: (
+      value: Awaited<ReturnType<typeof generateMockResponse>>,
+    ) => void = () => {};
+    vi.mocked(generateMockResponse).mockReturnValue(
+      new Promise((resolve) => {
+        resolveGenerate = resolve;
+      }),
+    );
+
+    const generatePromise = useGraphStore.getState().generateResponse("p1");
+
+    // Let the synchronous portion of generateResponse (node creation) run.
+    await Promise.resolve();
+    const state = useGraphStore.getState();
+    const responseNode = state.nodes.find((n) => n.id !== "p1");
+    expect(responseNode).toMatchObject({
+      type: "response",
+      data: { text: "" },
+    });
+    expect(state.edges).toEqual([
+      expect.objectContaining({ source: "p1", target: responseNode?.id }),
+    ]);
+    expect(state.generatingNodeId).toBe(responseNode?.id);
+
+    resolveGenerate({
+      title: "T",
+      answer: "final answer",
+      suggestedBranches: [
+        { label: "L", prompt: "P" },
+        { label: "L2", prompt: "P2" },
+        { label: "L3", prompt: "P3" },
+      ],
+    });
+    await generatePromise;
+
+    const finalNode = useGraphStore
+      .getState()
+      .nodes.find((n) => n.id === responseNode?.id);
+    expect(finalNode?.data.text).toBe("final answer");
+    expect(finalNode?.data.suggestedBranches?.length).toBe(3);
+    expect(useGraphStore.getState().generatingNodeId).toBeNull();
+  });
+
+  it("streams onToken callbacks into the response node's text progressively", async () => {
+    vi.mocked(generateMockResponse).mockImplementation(
+      async (_context, options) => {
+        options.onToken("Hello");
+        options.onToken(" world");
+        return {
+          title: "T",
+          answer: "Hello world",
+          suggestedBranches: [
+            { label: "L", prompt: "P" },
+            { label: "L2", prompt: "P2" },
+            { label: "L3", prompt: "P3" },
+          ],
+        };
+      },
+    );
+
+    await useGraphStore.getState().generateResponse("p1");
+    const responseNode = useGraphStore
+      .getState()
+      .nodes.find((n) => n.id !== "p1");
+    expect(responseNode?.data.text).toBe("Hello world");
+  });
+
+  it("cancelGeneration aborts the in-flight generation", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    let rejectGenerate: (error: unknown) => void = () => {};
+    vi.mocked(generateMockResponse).mockImplementation((_context, options) => {
+      capturedSignal = options.signal;
+      return new Promise((_resolve, reject) => {
+        rejectGenerate = reject;
+      });
+    });
+
+    const generatePromise = useGraphStore.getState().generateResponse("p1");
+    await Promise.resolve();
+
+    useGraphStore.getState().cancelGeneration();
+    expect(capturedSignal?.aborted).toBe(true);
+
+    rejectGenerate(new DOMException("Generation cancelled", "AbortError"));
+    await generatePromise;
+
+    expect(useGraphStore.getState().generatingNodeId).toBeNull();
   });
 });
