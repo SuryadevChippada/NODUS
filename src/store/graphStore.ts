@@ -10,8 +10,13 @@ import {
   type Connection,
 } from "@xyflow/react";
 import { sampleNodes, sampleEdges } from "../lib/sampleGraph";
-import type { GraphNodeData } from "../types/graph";
+import type { GraphNode, GraphNodeData } from "../types/graph";
 import * as db from "../lib/db";
+import {
+  getChildIds,
+  getParentId,
+  getDescendantIds,
+} from "../lib/graphTraversal";
 
 const POSITION_SAVE_DEBOUNCE_MS = 400;
 const positionSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -37,6 +42,10 @@ interface GraphState {
   onNodesChange: (changes: NodeChange<Node<GraphNodeData>>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
+  addNode: (parentId: string | null, text: string) => void;
+  updateNodeText: (nodeId: string, text: string) => void;
+  deleteNodeWithDescendants: (nodeId: string) => void;
+  deleteNodeAndReparentChildren: (nodeId: string) => void;
 }
 
 export const useGraphStore = create<GraphState>((set, get) => ({
@@ -135,5 +144,134 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     }).catch((error: unknown) => {
       console.error(`Failed to save edge ${newEdge.id} to database`, error);
     });
+  },
+
+  addNode: (parentId, text) => {
+    const sessionId = get().sessionId;
+    if (!sessionId) return;
+
+    const id = crypto.randomUUID();
+    const nodes = get().nodes;
+    const edges = get().edges;
+
+    let position: { x: number; y: number };
+    if (parentId) {
+      const parent = nodes.find((node) => node.id === parentId);
+      const siblingCount = getChildIds(parentId, edges).length;
+      position = parent
+        ? {
+            x: parent.position.x + siblingCount * 260,
+            y: parent.position.y + 160,
+          }
+        : { x: 0, y: 0 };
+    } else {
+      const rootCount = nodes.filter(
+        (node) => getParentId(node.id, edges) === null,
+      ).length;
+      position = { x: rootCount * 260, y: -160 };
+    }
+
+    const newNode: GraphNode = {
+      id,
+      type: "prompt",
+      position,
+      data: { text },
+    };
+
+    set({ nodes: [...nodes, newNode] });
+    db.insertNode(sessionId, newNode).catch((error) =>
+      console.error("Failed to persist new node", error),
+    );
+
+    if (parentId) {
+      const newEdge: Edge = {
+        id: crypto.randomUUID(),
+        source: parentId,
+        target: id,
+      };
+      set({ edges: [...get().edges, newEdge] });
+      db.insertEdge(sessionId, newEdge).catch((error) =>
+        console.error("Failed to persist new edge", error),
+      );
+    }
+  },
+
+  updateNodeText: (nodeId, text) => {
+    set({
+      nodes: get().nodes.map((node) =>
+        node.id === nodeId ? { ...node, data: { text } } : node,
+      ),
+    });
+    db.updateNodeText(nodeId, text).catch((error) =>
+      console.error("Failed to persist node text", error),
+    );
+  },
+
+  deleteNodeWithDescendants: (nodeId) => {
+    const edges = get().edges;
+    const idsToRemove = new Set([nodeId, ...getDescendantIds(nodeId, edges)]);
+    const edgesToRemove = edges.filter(
+      (edge) => idsToRemove.has(edge.source) || idsToRemove.has(edge.target),
+    );
+
+    set({
+      nodes: get().nodes.filter((node) => !idsToRemove.has(node.id)),
+      edges: edges.filter(
+        (edge) =>
+          !idsToRemove.has(edge.source) && !idsToRemove.has(edge.target),
+      ),
+    });
+
+    for (const id of idsToRemove) {
+      db.deleteNode(id).catch((error) =>
+        console.error("Failed to delete node", error),
+      );
+    }
+    for (const edge of edgesToRemove) {
+      db.deleteEdge(edge.id).catch((error) =>
+        console.error("Failed to delete edge", error),
+      );
+    }
+  },
+
+  deleteNodeAndReparentChildren: (nodeId) => {
+    const edges = get().edges;
+    const parentId = getParentId(nodeId, edges);
+    const childIds = getChildIds(nodeId, edges);
+    const edgesToRemove = edges.filter(
+      (edge) => edge.source === nodeId || edge.target === nodeId,
+    );
+    const remainingEdges = edges.filter(
+      (edge) => edge.source !== nodeId && edge.target !== nodeId,
+    );
+    const newEdges: Edge[] = parentId
+      ? childIds.map((childId) => ({
+          id: crypto.randomUUID(),
+          source: parentId,
+          target: childId,
+        }))
+      : [];
+
+    set({
+      nodes: get().nodes.filter((node) => node.id !== nodeId),
+      edges: [...remainingEdges, ...newEdges],
+    });
+
+    const sessionId = get().sessionId;
+    db.deleteNode(nodeId).catch((error) =>
+      console.error("Failed to delete node", error),
+    );
+    for (const edge of edgesToRemove) {
+      db.deleteEdge(edge.id).catch((error) =>
+        console.error("Failed to delete old edge", error),
+      );
+    }
+    if (sessionId) {
+      for (const edge of newEdges) {
+        db.insertEdge(sessionId, edge).catch((error) =>
+          console.error("Failed to persist reparented edge", error),
+        );
+      }
+    }
   },
 }));

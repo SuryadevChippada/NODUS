@@ -73,6 +73,7 @@ vi.mock("../lib/db", () => ({
   loadSessionGraph: vi.fn(),
   insertNode: vi.fn().mockResolvedValue(undefined),
   updateNodePosition: vi.fn().mockResolvedValue(undefined),
+  updateNodeText: vi.fn().mockResolvedValue(undefined),
   deleteNode: vi.fn().mockResolvedValue(undefined),
   insertEdge: vi.fn().mockResolvedValue(undefined),
   deleteEdge: vi.fn().mockResolvedValue(undefined),
@@ -320,5 +321,145 @@ describe("useGraphStore persistence error handling", () => {
 
     consoleErrorSpy.mockRestore();
     vi.useRealTimers();
+  });
+});
+
+describe("useGraphStore.addNode", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useGraphStore.setState({
+      sessionId: "s1",
+      nodes: [
+        {
+          id: "a",
+          type: "prompt",
+          position: { x: 0, y: 0 },
+          data: { text: "A" },
+        },
+      ],
+      edges: [],
+    });
+  });
+
+  it("adds a new root node with no parent and no new edge", () => {
+    useGraphStore.getState().addNode(null, "New node");
+    const state = useGraphStore.getState();
+    expect(state.nodes).toHaveLength(2);
+    const newNode = state.nodes.find((n) => n.id !== "a");
+    expect(newNode).toMatchObject({
+      type: "prompt",
+      data: { text: "New node" },
+    });
+    expect(state.edges).toHaveLength(0);
+    expect(vi.mocked(db.insertNode)).toHaveBeenCalledWith("s1", newNode);
+    expect(vi.mocked(db.insertEdge)).not.toHaveBeenCalled();
+  });
+
+  it("adds a child node connected to the given parent", () => {
+    useGraphStore.getState().addNode("a", "Child node");
+    const state = useGraphStore.getState();
+    expect(state.nodes).toHaveLength(2);
+    const newNode = state.nodes.find((n) => n.id !== "a");
+    expect(state.edges).toHaveLength(1);
+    expect(state.edges[0]).toMatchObject({ source: "a", target: newNode?.id });
+    expect(vi.mocked(db.insertEdge)).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ source: "a", target: newNode?.id }),
+    );
+  });
+});
+
+describe("useGraphStore.updateNodeText (store action)", () => {
+  it("updates the node's text in state and persists it", () => {
+    useGraphStore.setState({
+      nodes: [
+        {
+          id: "a",
+          type: "prompt",
+          position: { x: 0, y: 0 },
+          data: { text: "old" },
+        },
+      ],
+    });
+    useGraphStore.getState().updateNodeText("a", "new text");
+    expect(useGraphStore.getState().nodes[0].data.text).toBe("new text");
+    expect(vi.mocked(db.updateNodeText)).toHaveBeenCalledWith("a", "new text");
+  });
+});
+
+describe("useGraphStore delete actions", () => {
+  // Tree: a -> b -> c, a -> d
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useGraphStore.setState({
+      sessionId: "s1",
+      nodes: [
+        {
+          id: "a",
+          type: "prompt",
+          position: { x: 0, y: 0 },
+          data: { text: "A" },
+        },
+        {
+          id: "b",
+          type: "prompt",
+          position: { x: 0, y: 100 },
+          data: { text: "B" },
+        },
+        {
+          id: "c",
+          type: "prompt",
+          position: { x: 0, y: 200 },
+          data: { text: "C" },
+        },
+        {
+          id: "d",
+          type: "prompt",
+          position: { x: 100, y: 100 },
+          data: { text: "D" },
+        },
+      ],
+      edges: [
+        { id: "e1", source: "a", target: "b" },
+        { id: "e2", source: "b", target: "c" },
+        { id: "e3", source: "a", target: "d" },
+      ],
+    });
+  });
+
+  it("deleteNodeWithDescendants removes the node and all its descendants, in state and in the database", () => {
+    useGraphStore.getState().deleteNodeWithDescendants("b");
+    const state = useGraphStore.getState();
+    expect(state.nodes.map((n) => n.id).sort()).toEqual(["a", "d"]);
+    expect(state.edges.map((e) => e.id).sort()).toEqual(["e3"]);
+    expect(vi.mocked(db.deleteNode)).toHaveBeenCalledWith("b");
+    expect(vi.mocked(db.deleteNode)).toHaveBeenCalledWith("c");
+    expect(vi.mocked(db.deleteEdge)).toHaveBeenCalledWith("e1");
+    expect(vi.mocked(db.deleteEdge)).toHaveBeenCalledWith("e2");
+  });
+
+  it("deleteNodeAndReparentChildren removes only the node and reconnects its children to its parent", () => {
+    useGraphStore.getState().deleteNodeAndReparentChildren("b");
+    const state = useGraphStore.getState();
+    expect(state.nodes.map((n) => n.id).sort()).toEqual(["a", "c", "d"]);
+    // c should now be connected directly to a
+    const cEdge = state.edges.find((e) => e.target === "c");
+    expect(cEdge?.source).toBe("a");
+    expect(vi.mocked(db.deleteNode)).toHaveBeenCalledWith("b");
+    expect(vi.mocked(db.deleteEdge)).toHaveBeenCalledWith("e1");
+    expect(vi.mocked(db.deleteEdge)).toHaveBeenCalledWith("e2");
+    expect(vi.mocked(db.insertEdge)).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ source: "a", target: "c" }),
+    );
+  });
+
+  it("deleteNodeAndReparentChildren on a root node leaves its children as new roots", () => {
+    useGraphStore.getState().deleteNodeAndReparentChildren("a");
+    const state = useGraphStore.getState();
+    expect(state.nodes.map((n) => n.id).sort()).toEqual(["b", "c", "d"]);
+    // b and d had no parent to reconnect to — they simply lose their edge from a
+    expect(state.edges.map((e) => e.id)).toEqual(["e2"]);
+    expect(vi.mocked(db.insertEdge)).not.toHaveBeenCalled();
   });
 });
