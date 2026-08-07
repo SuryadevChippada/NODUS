@@ -22,6 +22,16 @@ const mockAddNode = vi.fn();
 const mockUpdateNodeText = vi.fn();
 const mockDeleteWithDescendants = vi.fn();
 const mockDeleteAndReparent = vi.fn();
+// vi.mock is hoisted above this file's own top-level statements, so a plain
+// `const mockConfirm = vi.fn()` would still be in the temporal dead zone
+// when the factory below runs (it's forced to evaluate early because
+// ConversationNode.tsx imports "@tauri-apps/plugin-dialog" ahead of the
+// store). vi.hoisted() hoists the value itself alongside vi.mock.
+const mockConfirm = vi.hoisted(() => vi.fn());
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  confirm: mockConfirm,
+}));
 
 vi.mock("../../store/graphStore", () => ({
   useGraphStore: (selector: (state: unknown) => unknown) =>
@@ -51,7 +61,7 @@ const baseProps = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  mockConfirm.mockResolvedValue(true);
   Object.assign(navigator, {
     clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
@@ -84,30 +94,31 @@ describe("ConversationNode", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("hello world");
   });
 
-  it("cascade-deletes when the user confirms both prompts", () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("cascade-deletes when the user confirms both prompts", async () => {
+    mockConfirm.mockResolvedValue(true);
     render(<ConversationNode {...baseProps} />);
     fireEvent.click(screen.getByRole("button", { name: /delete/i }));
-    expect(mockDeleteWithDescendants).toHaveBeenCalledWith("n1");
+    await vi.waitFor(() =>
+      expect(mockDeleteWithDescendants).toHaveBeenCalledWith("n1"),
+    );
     expect(mockDeleteAndReparent).not.toHaveBeenCalled();
   });
 
-  it("reparents when the user declines the cascade prompt", () => {
-    let call = 0;
-    vi.spyOn(window, "confirm").mockImplementation(() => {
-      call += 1;
-      return call === 1; // confirm deletion, decline cascade
-    });
+  it("reparents when the user declines the cascade prompt", async () => {
+    mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false); // confirm deletion, decline cascade
     render(<ConversationNode {...baseProps} />);
     fireEvent.click(screen.getByRole("button", { name: /delete/i }));
-    expect(mockDeleteAndReparent).toHaveBeenCalledWith("n1");
+    await vi.waitFor(() =>
+      expect(mockDeleteAndReparent).toHaveBeenCalledWith("n1"),
+    );
     expect(mockDeleteWithDescendants).not.toHaveBeenCalled();
   });
 
-  it("does nothing when the user cancels the first delete prompt", () => {
-    vi.spyOn(window, "confirm").mockReturnValue(false);
+  it("does nothing when the user cancels the first delete prompt", async () => {
+    mockConfirm.mockResolvedValue(false);
     render(<ConversationNode {...baseProps} />);
     fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+    await vi.waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
     expect(mockDeleteWithDescendants).not.toHaveBeenCalled();
     expect(mockDeleteAndReparent).not.toHaveBeenCalled();
   });

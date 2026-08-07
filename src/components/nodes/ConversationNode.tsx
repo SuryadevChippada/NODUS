@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Handle, Position, NodeToolbar } from "@xyflow/react";
 import type { NodeProps, Node } from "@xyflow/react";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import type { GraphNodeData } from "../../types/graph";
 import { useGraphStore } from "../../store/graphStore";
 
@@ -62,15 +63,16 @@ export function ConversationNode({
     addNode(id, "New node");
   };
 
-  const handleDelete = () => {
-    if (!window.confirm(`Delete this node?`)) return;
+  const handleDelete = async () => {
+    const wantsDelete = await confirm("Delete this node?");
+    if (!wantsDelete) return;
 
     if (childCount === 0) {
       deleteNodeWithDescendants(id);
       return;
     }
 
-    const wantsCascade = window.confirm(
+    const wantsCascade = await confirm(
       `Also delete its ${childCount} branch(es)? Choose Cancel to keep them, reconnected to this node's parent instead.`,
     );
     if (wantsCascade) {
