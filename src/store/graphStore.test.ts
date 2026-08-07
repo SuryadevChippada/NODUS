@@ -391,6 +391,26 @@ describe("useGraphStore.updateNodeText (store action)", () => {
     expect(useGraphStore.getState().nodes[0].data.text).toBe("new text");
     expect(vi.mocked(db.updateNodeText)).toHaveBeenCalledWith("a", "new text");
   });
+
+  it("preserves an existing suggestedBranches value on the node's data instead of wiping it", () => {
+    useGraphStore.setState({
+      nodes: [
+        {
+          id: "a",
+          type: "response",
+          position: { x: 0, y: 0 },
+          data: {
+            text: "old answer",
+            suggestedBranches: [{ label: "L", prompt: "P" }],
+          },
+        },
+      ],
+    });
+    useGraphStore.getState().updateNodeText("a", "edited answer");
+    const node = useGraphStore.getState().nodes[0];
+    expect(node.data.text).toBe("edited answer");
+    expect(node.data.suggestedBranches).toEqual([{ label: "L", prompt: "P" }]);
+  });
 });
 
 describe("useGraphStore delete actions", () => {
@@ -554,6 +574,74 @@ describe("useGraphStore.generateResponse", () => {
       .getState()
       .nodes.find((n) => n.id !== "p1");
     expect(responseNode?.data.text).toBe("Hello world");
+  });
+
+  it("ignores a second generateResponse call while one is already in flight (only one generation/node is created)", async () => {
+    let resolveGenerate: (
+      value: Awaited<ReturnType<typeof generateMockResponse>>,
+    ) => void = () => {};
+    vi.mocked(generateMockResponse).mockReturnValue(
+      new Promise((resolve) => {
+        resolveGenerate = resolve;
+      }),
+    );
+
+    const firstPromise = useGraphStore.getState().generateResponse("p1");
+    await Promise.resolve();
+
+    // Second call while the first is still pending must be a no-op: it
+    // should return immediately without calling the provider again or
+    // creating a second response node (regression: a bare module-level
+    // activeAbortController let generation B's finally clear generation
+    // A's controller, silently disarming Stop for A).
+    await useGraphStore.getState().generateResponse("p1");
+
+    expect(vi.mocked(generateMockResponse)).toHaveBeenCalledTimes(1);
+    expect(
+      useGraphStore.getState().nodes.filter((n) => n.id !== "p1"),
+    ).toHaveLength(1);
+
+    resolveGenerate({
+      title: "T",
+      answer: "final answer",
+      suggestedBranches: [
+        { label: "L", prompt: "P" },
+        { label: "L2", prompt: "P2" },
+        { label: "L3", prompt: "P3" },
+      ],
+    });
+    await firstPromise;
+  });
+
+  it("persists partial streamed text to the database immediately when generation is cancelled mid-stream", async () => {
+    let rejectGenerate: (error: unknown) => void = () => {};
+    vi.mocked(generateMockResponse).mockImplementation((_context, options) => {
+      options.onToken("partial");
+      return new Promise((_resolve, reject) => {
+        rejectGenerate = reject;
+      });
+    });
+
+    const generatePromise = useGraphStore.getState().generateResponse("p1");
+    await Promise.resolve();
+
+    const responseNode = useGraphStore
+      .getState()
+      .nodes.find((n) => n.id !== "p1");
+    expect(responseNode?.data.text).toBe("partial");
+
+    useGraphStore.getState().cancelGeneration();
+    rejectGenerate(new DOMException("Generation cancelled", "AbortError"));
+    await generatePromise;
+
+    // The debounced stream-persist timer must not be relied on here — the
+    // flush happens synchronously in the catch block, so it's already
+    // recorded by the time the cancelled promise has been awaited.
+    expect(vi.mocked(db.updateNodeText)).toHaveBeenCalledWith(
+      responseNode?.id,
+      "partial",
+    );
+    expect(useGraphStore.getState().generatingNodeId).toBeNull();
   });
 
   it("cancelGeneration aborts the in-flight generation", async () => {

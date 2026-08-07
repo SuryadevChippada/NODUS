@@ -209,7 +209,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   updateNodeText: (nodeId, text) => {
     set({
       nodes: get().nodes.map((node) =>
-        node.id === nodeId ? { ...node, data: { text } } : node,
+        node.id === nodeId ? { ...node, data: { ...node.data, text } } : node,
       ),
     });
     db.updateNodeText(nodeId, text).catch((error) =>
@@ -286,6 +286,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   },
 
   generateResponse: async (promptNodeId) => {
+    // ponytail: generatingNodeId is a single global slot (one Stop button,
+    // no per-node concurrency in the UI) — refuse a second concurrent
+    // generation rather than let it silently steal the module-level
+    // abort controller out from under the first one.
+    if (get().generatingNodeId !== null) return;
+
     const sessionId = get().sessionId;
     if (!sessionId) return;
 
@@ -388,8 +394,28 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       );
     } catch (error) {
       console.error("Generation failed or was cancelled", error);
+      // Cancellation (or any failure) leaves the debounced persist timer
+      // dangling — clear it and flush whatever partial text is currently
+      // in state immediately, rather than letting the stale timer fire
+      // later and possibly race a subsequent generation's own timer.
+      if (streamPersistTimer) {
+        clearTimeout(streamPersistTimer);
+        streamPersistTimer = null;
+      }
+      const partialText = get().nodes.find((node) => node.id === responseNodeId)
+        ?.data.text;
+      if (partialText !== undefined) {
+        db.updateNodeText(responseNodeId, partialText).catch((flushError) =>
+          console.error(
+            "Failed to persist partial text after cancellation",
+            flushError,
+          ),
+        );
+      }
     } finally {
-      activeAbortController = null;
+      if (activeAbortController === abortController) {
+        activeAbortController = null;
+      }
       if (get().generatingNodeId === responseNodeId) {
         set({ generatingNodeId: null });
       }
