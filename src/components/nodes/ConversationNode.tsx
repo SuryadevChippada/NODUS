@@ -123,14 +123,18 @@ export function ConversationNode({
 
       {isEditing ? (
         <textarea
-          className="w-full resize-none rounded border border-slate-600 bg-slate-950 p-1 text-amber-50"
+          className="nodrag w-full resize-none rounded border border-slate-600 bg-slate-950 p-1 text-amber-50"
           value={draftText}
           autoFocus
           rows={3}
           onChange={(event) => setDraftText(event.target.value)}
           onBlur={saveEdit}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
               event.preventDefault();
               saveEdit();
             } else if (event.key === "Escape") {
