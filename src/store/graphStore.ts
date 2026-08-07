@@ -16,6 +16,19 @@ import * as db from "../lib/db";
 const POSITION_SAVE_DEBOUNCE_MS = 400;
 const positionSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+// Memoized in-flight/completed hydrate() promise, same pattern as getDb() in
+// src/lib/db.ts. Without this, React StrictMode's double-invoked effect (or
+// any other concurrent/repeat call) races two hydrate() runs against an
+// empty database, and both take the isNewSession branch, inserting a
+// duplicate workspace/session.
+let hydratePromise: Promise<void> | null = null;
+
+// ponytail: test-only escape hatch so each test case can simulate a fresh
+// app launch; never called from production code.
+export function __resetHydratePromiseForTests(): void {
+  hydratePromise = null;
+}
+
 interface GraphState {
   sessionId: string | null;
   nodes: Node<GraphNodeData>[];
@@ -31,23 +44,28 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   nodes: sampleNodes,
   edges: sampleEdges,
 
-  hydrate: async () => {
-    const { sessionId, isNewSession } =
-      await db.ensureDefaultWorkspaceAndSession();
+  hydrate: () => {
+    if (!hydratePromise) {
+      hydratePromise = (async () => {
+        const { sessionId, isNewSession } =
+          await db.ensureDefaultWorkspaceAndSession();
 
-    if (isNewSession) {
-      for (const node of sampleNodes) {
-        await db.insertNode(sessionId, node);
-      }
-      for (const edge of sampleEdges) {
-        await db.insertEdge(sessionId, edge);
-      }
-      set({ sessionId, nodes: sampleNodes, edges: sampleEdges });
-      return;
+        if (isNewSession) {
+          for (const node of sampleNodes) {
+            await db.insertNode(sessionId, node);
+          }
+          for (const edge of sampleEdges) {
+            await db.insertEdge(sessionId, edge);
+          }
+          set({ sessionId, nodes: sampleNodes, edges: sampleEdges });
+          return;
+        }
+
+        const { nodes, edges } = await db.loadSessionGraph(sessionId);
+        set({ sessionId, nodes, edges });
+      })();
     }
-
-    const { nodes, edges } = await db.loadSessionGraph(sessionId);
-    set({ sessionId, nodes, edges });
+    return hydratePromise;
   },
 
   onNodesChange: (changes) => {
@@ -58,7 +76,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
     for (const change of changes) {
       if (change.type === "remove") {
-        db.deleteNode(change.id);
+        db.deleteNode(change.id).catch((error: unknown) => {
+          console.error(
+            `Failed to delete node ${change.id} from database`,
+            error,
+          );
+        });
         const timer = positionSaveTimers.get(change.id);
         if (timer) {
           clearTimeout(timer);
@@ -71,7 +94,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         positionSaveTimers.set(
           id,
           setTimeout(() => {
-            db.updateNodePosition(id, position);
+            db.updateNodePosition(id, position).catch((error: unknown) => {
+              console.error(
+                `Failed to save position for node ${id} to database`,
+                error,
+              );
+            });
             positionSaveTimers.delete(id);
           }, POSITION_SAVE_DEBOUNCE_MS),
         );
@@ -84,7 +112,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
     for (const change of changes) {
       if (change.type === "remove") {
-        db.deleteEdge(change.id);
+        db.deleteEdge(change.id).catch((error: unknown) => {
+          console.error(
+            `Failed to delete edge ${change.id} from database`,
+            error,
+          );
+        });
       }
     }
   },
@@ -99,6 +132,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       id: newEdge.id,
       source: newEdge.source,
       target: newEdge.target,
+    }).catch((error: unknown) => {
+      console.error(`Failed to save edge ${newEdge.id} to database`, error);
     });
   },
 }));

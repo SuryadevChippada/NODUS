@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { useGraphStore } from "./graphStore";
+import { useGraphStore, __resetHydratePromiseForTests } from "./graphStore";
+import { sampleNodes, sampleEdges } from "../lib/sampleGraph";
 
 describe("useGraphStore", () => {
   beforeEach(() => {
@@ -83,6 +84,7 @@ describe("useGraphStore hydration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useGraphStore.setState(useGraphStore.getInitialState());
+    __resetHydratePromiseForTests();
   });
 
   it("seeds the sample graph into the database on a brand-new session", async () => {
@@ -124,6 +126,38 @@ describe("useGraphStore hydration", () => {
 
     expect(useGraphStore.getState().nodes).toEqual(persisted.nodes);
     expect(vi.mocked(db.insertNode)).not.toHaveBeenCalled();
+  });
+
+  it("is idempotent under concurrent invocation (regression: React StrictMode double-invoke raced two hydrate() calls into inserting duplicate workspace/session rows)", async () => {
+    vi.mocked(db.ensureDefaultWorkspaceAndSession).mockResolvedValue({
+      workspaceId: "w1",
+      sessionId: "s1",
+      isNewSession: true,
+    });
+    vi.mocked(db.loadSessionGraph).mockResolvedValue({ nodes: [], edges: [] });
+
+    await Promise.all([
+      useGraphStore.getState().hydrate(),
+      useGraphStore.getState().hydrate(),
+    ]);
+
+    expect(db.ensureDefaultWorkspaceAndSession).toHaveBeenCalledTimes(1);
+    expect(db.insertNode).toHaveBeenCalledTimes(sampleNodes.length);
+    expect(db.insertEdge).toHaveBeenCalledTimes(sampleEdges.length);
+  });
+
+  it("returns the same promise / does not re-run once already hydrated", async () => {
+    vi.mocked(db.ensureDefaultWorkspaceAndSession).mockResolvedValue({
+      workspaceId: "w1",
+      sessionId: "s1",
+      isNewSession: false,
+    });
+    vi.mocked(db.loadSessionGraph).mockResolvedValue({ nodes: [], edges: [] });
+
+    await useGraphStore.getState().hydrate();
+    await useGraphStore.getState().hydrate();
+
+    expect(db.ensureDefaultWorkspaceAndSession).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -182,5 +216,109 @@ describe("useGraphStore persistence side effects", () => {
     useGraphStore.setState({ edges: [{ id: "e1", source: "a", target: "b" }] });
     useGraphStore.getState().onEdgesChange([{ id: "e1", type: "remove" }]);
     expect(vi.mocked(db.deleteEdge)).toHaveBeenCalledWith("e1");
+  });
+});
+
+describe("useGraphStore persistence error handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useGraphStore.setState({
+      sessionId: "s1",
+      nodes: [
+        {
+          id: "a",
+          type: "prompt",
+          position: { x: 0, y: 0 },
+          data: { text: "A" },
+        },
+        {
+          id: "b",
+          type: "response",
+          position: { x: 0, y: 100 },
+          data: { text: "B" },
+        },
+      ],
+      edges: [],
+    });
+  });
+
+  it("does not throw and logs a failure when a fire-and-forget deleteNode write rejects", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    vi.mocked(db.deleteNode).mockRejectedValueOnce(new Error("disk full"));
+
+    expect(() =>
+      useGraphStore.getState().onNodesChange([{ id: "a", type: "remove" }]),
+    ).not.toThrow();
+
+    // let the rejected promise's .catch handler run
+    await vi.waitFor(() => expect(consoleErrorSpy).toHaveBeenCalled());
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("does not throw and logs a failure when a fire-and-forget insertEdge write rejects on connect", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    vi.mocked(db.insertEdge).mockRejectedValueOnce(
+      new Error("connection lost"),
+    );
+
+    expect(() =>
+      useGraphStore.getState().onConnect({
+        source: "a",
+        target: "b",
+        sourceHandle: null,
+        targetHandle: null,
+      }),
+    ).not.toThrow();
+
+    await vi.waitFor(() => expect(consoleErrorSpy).toHaveBeenCalled());
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("does not throw and logs a failure when a fire-and-forget deleteEdge write rejects", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    vi.mocked(db.deleteEdge).mockRejectedValueOnce(
+      new Error("connection lost"),
+    );
+    useGraphStore.setState({ edges: [{ id: "e1", source: "a", target: "b" }] });
+
+    expect(() =>
+      useGraphStore.getState().onEdgesChange([{ id: "e1", type: "remove" }]),
+    ).not.toThrow();
+
+    await vi.waitFor(() => expect(consoleErrorSpy).toHaveBeenCalled());
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("does not throw and logs a failure when a debounced updateNodePosition write rejects", async () => {
+    vi.useFakeTimers();
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    vi.mocked(db.updateNodePosition).mockRejectedValueOnce(
+      new Error("connection lost"),
+    );
+
+    expect(() =>
+      useGraphStore
+        .getState()
+        .onNodesChange([
+          { id: "a", type: "position", position: { x: 50, y: 75 } },
+        ]),
+    ).not.toThrow();
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
+    vi.useRealTimers();
   });
 });
