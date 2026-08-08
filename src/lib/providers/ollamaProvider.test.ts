@@ -30,7 +30,7 @@ const context = [
 ];
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 describe("generateOllamaResponse", () => {
