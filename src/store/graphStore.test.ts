@@ -83,9 +83,17 @@ vi.mock("../lib/db", () => ({
 vi.mock("../lib/providers/mockProvider", () => ({
   generateMockResponse: vi.fn(),
 }));
+vi.mock("../lib/providers/ollamaProvider", () => ({
+  generateOllamaResponse: vi.fn(),
+}));
+vi.mock("../lib/providers/ollamaClient", () => ({
+  checkOllamaHealth: vi.fn(),
+}));
 
 import * as db from "../lib/db";
 import { generateMockResponse } from "../lib/providers/mockProvider";
+import { generateOllamaResponse } from "../lib/providers/ollamaProvider";
+import { checkOllamaHealth } from "../lib/providers/ollamaClient";
 
 describe("useGraphStore hydration", () => {
   beforeEach(() => {
@@ -495,6 +503,7 @@ describe("useGraphStore delete actions", () => {
 describe("useGraphStore.generateResponse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(checkOllamaHealth).mockResolvedValue(false);
     useGraphStore.setState({
       sessionId: "s1",
       generatingNodeId: null,
@@ -666,5 +675,87 @@ describe("useGraphStore.generateResponse", () => {
     await generatePromise;
 
     expect(useGraphStore.getState().generatingNodeId).toBeNull();
+  });
+});
+
+describe("useGraphStore.generateResponse provider selection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useGraphStore.setState({
+      sessionId: "s1",
+      generatingNodeId: null,
+      lastGenerationProvider: null,
+      nodes: [
+        {
+          id: "p1",
+          type: "prompt",
+          position: { x: 0, y: 0 },
+          data: { text: "question" },
+        },
+      ],
+      edges: [],
+    });
+  });
+
+  it("uses the Ollama provider when it's healthy", async () => {
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    vi.mocked(generateOllamaResponse).mockResolvedValue({
+      title: "T",
+      answer: "ollama answer",
+      suggestedBranches: [
+        { label: "A", prompt: "a" },
+        { label: "B", prompt: "b" },
+        { label: "C", prompt: "c" },
+      ],
+    });
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    expect(generateOllamaResponse).toHaveBeenCalled();
+    expect(vi.mocked(generateMockResponse)).not.toHaveBeenCalled();
+    expect(useGraphStore.getState().lastGenerationProvider).toBe("ollama");
+  });
+
+  it("falls back to the mock provider when Ollama is not healthy", async () => {
+    vi.mocked(checkOllamaHealth).mockResolvedValue(false);
+    vi.mocked(generateMockResponse).mockResolvedValue({
+      title: "T",
+      answer: "mock answer",
+      suggestedBranches: [
+        { label: "A", prompt: "a" },
+        { label: "B", prompt: "b" },
+        { label: "C", prompt: "c" },
+      ],
+    });
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    expect(generateOllamaResponse).not.toHaveBeenCalled();
+    expect(vi.mocked(generateMockResponse)).toHaveBeenCalled();
+    expect(useGraphStore.getState().lastGenerationProvider).toBe("mock");
+  });
+
+  it("falls back to the mock provider when Ollama is healthy but the generation call itself throws", async () => {
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    vi.mocked(generateOllamaResponse).mockRejectedValue(
+      new Error("model crashed"),
+    );
+    vi.mocked(generateMockResponse).mockResolvedValue({
+      title: "T",
+      answer: "mock answer",
+      suggestedBranches: [
+        { label: "A", prompt: "a" },
+        { label: "B", prompt: "b" },
+        { label: "C", prompt: "c" },
+      ],
+    });
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    expect(useGraphStore.getState().lastGenerationProvider).toBe("mock");
+    const responseNode = useGraphStore
+      .getState()
+      .nodes.find((n) => n.id !== "p1");
+    expect(responseNode?.data.text).toBe("mock answer");
   });
 });

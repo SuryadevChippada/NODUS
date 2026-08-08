@@ -18,7 +18,10 @@ import {
   getDescendantIds,
 } from "../lib/graphTraversal";
 import { generateMockResponse } from "../lib/providers/mockProvider";
+import { generateOllamaResponse } from "../lib/providers/ollamaProvider";
+import { checkOllamaHealth } from "../lib/providers/ollamaClient";
 import { buildBranchContext } from "../lib/branchContext";
+import type { ProviderResponse } from "../types/provider";
 
 const POSITION_SAVE_DEBOUNCE_MS = 400;
 const positionSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -53,6 +56,7 @@ interface GraphState {
   deleteNodeWithDescendants: (nodeId: string) => void;
   deleteNodeAndReparentChildren: (nodeId: string) => void;
   generatingNodeId: string | null;
+  lastGenerationProvider: "ollama" | "mock" | null;
   generateResponse: (promptNodeId: string) => Promise<void>;
   cancelGeneration: () => void;
 }
@@ -62,6 +66,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   nodes: sampleNodes,
   edges: sampleEdges,
   generatingNodeId: null,
+  lastGenerationProvider: null,
 
   hydrate: () => {
     if (!hydratePromise) {
@@ -343,31 +348,64 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       get().edges,
     );
 
-    try {
-      const result = await generateMockResponse(context, {
-        signal: abortController.signal,
-        onToken: (chunk) => {
-          set({
-            nodes: get().nodes.map((node) =>
-              node.id === responseNodeId
-                ? { ...node, data: { text: node.data.text + chunk } }
-                : node,
-            ),
-          });
-
-          if (streamPersistTimer) clearTimeout(streamPersistTimer);
-          streamPersistTimer = setTimeout(() => {
-            const currentText = get().nodes.find((n) => n.id === responseNodeId)
-              ?.data.text;
-            if (currentText !== undefined) {
-              db.updateNodeText(responseNodeId, currentText).catch((error) =>
-                console.error("Failed to persist streaming text", error),
-              );
-            }
-            streamPersistTimer = null;
-          }, TEXT_STREAM_PERSIST_DEBOUNCE_MS);
-        },
+    const onToken = (chunk: string) => {
+      set({
+        nodes: get().nodes.map((node) =>
+          node.id === responseNodeId
+            ? { ...node, data: { text: node.data.text + chunk } }
+            : node,
+        ),
       });
+
+      if (streamPersistTimer) clearTimeout(streamPersistTimer);
+      streamPersistTimer = setTimeout(() => {
+        const currentText = get().nodes.find((n) => n.id === responseNodeId)
+          ?.data.text;
+        if (currentText !== undefined) {
+          db.updateNodeText(responseNodeId, currentText).catch((error) =>
+            console.error("Failed to persist streaming text", error),
+          );
+        }
+        streamPersistTimer = null;
+      }, TEXT_STREAM_PERSIST_DEBOUNCE_MS);
+    };
+
+    try {
+      const isOllamaHealthy = await checkOllamaHealth();
+      let providerUsed: "ollama" | "mock" = "mock";
+      let result: ProviderResponse;
+
+      if (isOllamaHealthy) {
+        try {
+          result = await generateOllamaResponse(context, {
+            signal: abortController.signal,
+            onToken,
+          });
+          providerUsed = "ollama";
+        } catch (error) {
+          // A user-triggered abort must propagate exactly like the mock
+          // provider's own aborts do — not get silently swapped for a mock
+          // generation mid-cancellation. Only a genuine Ollama failure
+          // (no models, HTTP error, etc.) falls back.
+          if (error instanceof DOMException && error.name === "AbortError") {
+            throw error;
+          }
+          console.error(
+            "Ollama generation failed, falling back to mock provider",
+            error,
+          );
+          result = await generateMockResponse(context, {
+            signal: abortController.signal,
+            onToken,
+          });
+          providerUsed = "mock";
+        }
+      } else {
+        result = await generateMockResponse(context, {
+          signal: abortController.signal,
+          onToken,
+        });
+      }
 
       if (streamPersistTimer) {
         clearTimeout(streamPersistTimer);
@@ -386,6 +424,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
               }
             : node,
         ),
+        lastGenerationProvider: providerUsed,
       });
       db.updateNodeAnswer(
         responseNodeId,
