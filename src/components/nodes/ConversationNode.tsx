@@ -38,6 +38,9 @@ export function ConversationNode({
   const generatingNodeId = useGraphStore((state) => state.generatingNodeId);
   const generateResponse = useGraphStore((state) => state.generateResponse);
   const cancelGeneration = useGraphStore((state) => state.cancelGeneration);
+  const lastGenerationProvider = useGraphStore(
+    (state) => state.lastGenerationProvider,
+  );
   const isGenerating = generatingNodeId === id;
 
   const startEdit = () => {
@@ -173,6 +176,16 @@ export function ConversationNode({
       {isGenerating && (
         <p className="mt-1 text-xs text-amber-400">❯ generating…</p>
       )}
+
+      {type === "response" &&
+        !isGenerating &&
+        data.text.length > 0 &&
+        lastGenerationProvider && (
+          <p className="mt-1 text-[10px] text-slate-500">
+            via{" "}
+            {lastGenerationProvider === "ollama" ? "ollama" : "mock provider"}
+          </p>
+        )}
 
       {data.suggestedBranches && data.suggestedBranches.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">

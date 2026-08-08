@@ -37,6 +37,7 @@ const mockConfirm = vi.hoisted(() => vi.fn());
 // mockAddNode et al. above don't need vi.hoisted either. Tests mutate this
 // directly to control which node the mocked store reports as generating.
 let mockGeneratingNodeId: string | null = null;
+let mockLastGenerationProvider: "ollama" | "mock" | null = null;
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   confirm: mockConfirm,
@@ -53,6 +54,7 @@ vi.mock("../../store/graphStore", () => ({
       generatingNodeId: mockGeneratingNodeId,
       generateResponse: mockGenerateResponse,
       cancelGeneration: mockCancelGeneration,
+      lastGenerationProvider: mockLastGenerationProvider,
     }),
 }));
 
@@ -75,6 +77,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockConfirm.mockResolvedValue(true);
   mockGeneratingNodeId = null;
+  mockLastGenerationProvider = null;
   Object.assign(navigator, {
     clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
@@ -200,5 +203,29 @@ describe("ConversationNode generation UI", () => {
     );
     expect(screen.getByRole("button", { name: /generate/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Explain more" })).toBeDisabled();
+  });
+
+  it("shows which provider generated the response once complete", () => {
+    mockLastGenerationProvider = "ollama";
+    render(
+      <ConversationNode
+        {...baseProps}
+        type="response"
+        data={{ text: "an answer" }}
+      />,
+    );
+    expect(screen.getByText(/ollama/i)).toBeInTheDocument();
+  });
+
+  it("shows a mock-provider indicator when Ollama wasn't used", () => {
+    mockLastGenerationProvider = "mock";
+    render(
+      <ConversationNode
+        {...baseProps}
+        type="response"
+        data={{ text: "an answer" }}
+      />,
+    );
+    expect(screen.getByText(/mock/i)).toBeInTheDocument();
   });
 });
