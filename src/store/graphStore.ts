@@ -394,6 +394,16 @@ export const useGraphStore = create<GraphState>((set, get) => ({
             "Ollama generation failed, falling back to mock provider",
             error,
           );
+          // Ollama may have already streamed partial text via onToken
+          // before failing; clear it so the mock's own stream doesn't
+          // visibly concatenate onto Ollama's leftover partial answer.
+          set({
+            nodes: get().nodes.map((node) =>
+              node.id === responseNodeId
+                ? { ...node, data: { text: "" } }
+                : node,
+            ),
+          });
           result = await generateMockResponse(context, {
             signal: abortController.signal,
             onToken,

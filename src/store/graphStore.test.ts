@@ -758,4 +758,43 @@ describe("useGraphStore.generateResponse provider selection", () => {
       .nodes.find((n) => n.id !== "p1");
     expect(responseNode?.data.text).toBe("mock answer");
   });
+
+  it("clears Ollama's partial text before the mock's own stream starts, so they never visibly concatenate", async () => {
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    vi.mocked(generateOllamaResponse).mockImplementation(
+      async (_context, options) => {
+        options.onToken("ollama partial ");
+        throw new Error("connection dropped");
+      },
+    );
+
+    let textDuringMockFirstToken: string | undefined;
+    vi.mocked(generateMockResponse).mockImplementation(
+      async (_context, options) => {
+        options.onToken("mock ");
+        textDuringMockFirstToken = useGraphStore
+          .getState()
+          .nodes.find((n) => n.id !== "p1")?.data.text;
+        return {
+          title: "T",
+          answer: "mock answer",
+          suggestedBranches: [
+            { label: "A", prompt: "a" },
+            { label: "B", prompt: "b" },
+            { label: "C", prompt: "c" },
+          ],
+        };
+      },
+    );
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    // The assertion that matters: at the moment the mock's own stream
+    // produced its first token, the node's text must not still contain
+    // Ollama's leftover partial answer. Checking only the final text
+    // (after the mock's full completion overwrites it) would pass even
+    // without the fix, since completion always overwrites wholesale.
+    expect(textDuringMockFirstToken).toBe("mock ");
+    expect(textDuringMockFirstToken).not.toContain("ollama partial");
+  });
 });
