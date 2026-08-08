@@ -4,6 +4,8 @@ import { suggestedBranchSchema } from "./provider";
 export const nodeDataSchema = z.object({
   text: z.string().min(1),
   suggestedBranches: z.array(suggestedBranchSchema).optional(),
+  identityName: z.string().optional(),
+  identitySymbol: z.string().optional(),
 });
 
 export const graphNodeSchema = z.object({

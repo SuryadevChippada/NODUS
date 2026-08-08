@@ -26,6 +26,11 @@ import {
   deleteNode,
   insertEdge,
   deleteEdge,
+  ensureDefaultIdentity,
+  listIdentities,
+  insertIdentity,
+  updateIdentity,
+  deleteIdentity,
 } from "./db";
 
 beforeEach(() => {
@@ -193,5 +198,177 @@ describe("loadSessionGraph with suggested_branches", () => {
       .mockResolvedValueOnce([]);
     const { nodes } = await loadSessionGraph("session-1");
     expect(nodes[0].data.suggestedBranches).toBeUndefined();
+  });
+});
+
+describe("ensureDefaultIdentity", () => {
+  it("creates a Default identity when none exist for the workspace", async () => {
+    mockSelect.mockResolvedValueOnce([]); // no existing identity found
+    const identity = await ensureDefaultIdentity("workspace-1");
+    expect(identity.name).toBe("Default");
+    expect(identity.symbol).toBe("❯");
+    expect(identity.workspaceId).toBe("workspace-1");
+    expect(identity.preferredModel).toBeNull();
+    expect(identity.responseStyle).toBeNull();
+    const insertCalls = mockExecute.mock.calls.filter((c) =>
+      String(c[0]).trim().toUpperCase().startsWith("INSERT"),
+    );
+    expect(insertCalls.length).toBe(1);
+  });
+
+  it("returns the existing identity when one is found, without inserting", async () => {
+    mockSelect.mockResolvedValueOnce([
+      {
+        id: "identity-1",
+        workspace_id: "workspace-1",
+        name: "Researcher",
+        symbol: "R",
+        preferred_model: "llama3.1:latest",
+        response_style: "concise",
+      },
+    ]);
+    const identity = await ensureDefaultIdentity("workspace-1");
+    expect(identity).toEqual({
+      id: "identity-1",
+      workspaceId: "workspace-1",
+      name: "Researcher",
+      symbol: "R",
+      preferredModel: "llama3.1:latest",
+      responseStyle: "concise",
+    });
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("listIdentities", () => {
+  it("maps rows into Identity shape", async () => {
+    mockSelect.mockResolvedValueOnce([
+      {
+        id: "identity-1",
+        workspace_id: "workspace-1",
+        name: "Default",
+        symbol: "❯",
+        preferred_model: null,
+        response_style: null,
+      },
+    ]);
+    const identities = await listIdentities("workspace-1");
+    expect(identities).toEqual([
+      {
+        id: "identity-1",
+        workspaceId: "workspace-1",
+        name: "Default",
+        symbol: "❯",
+        preferredModel: null,
+        responseStyle: null,
+      },
+    ]);
+  });
+});
+
+describe("identity write operations use parameterized SQL", () => {
+  it("insertIdentity passes values as bind params, not string-interpolated", async () => {
+    await insertIdentity({
+      id: "identity-1",
+      workspaceId: "workspace-1",
+      name: "Researcher",
+      symbol: "R",
+      preferredModel: null,
+      responseStyle: null,
+    });
+    const [sql, values] = mockExecute.mock.calls[0];
+    expect(sql).not.toContain("Researcher");
+    expect(values).toContain("Researcher");
+  });
+
+  it("updateIdentity updates the given identity's editable columns", async () => {
+    await updateIdentity("identity-1", {
+      name: "Renamed",
+      symbol: "X",
+      preferredModel: "qwen2:7b",
+      responseStyle: "detailed",
+    });
+    const [sql, values] = mockExecute.mock.calls[0];
+    expect(sql.toUpperCase()).toContain("UPDATE");
+    expect(values).toEqual(
+      expect.arrayContaining([
+        "Renamed",
+        "X",
+        "qwen2:7b",
+        "detailed",
+        "identity-1",
+      ]),
+    );
+  });
+
+  it("deleteIdentity deletes by id", async () => {
+    await deleteIdentity("identity-1");
+    const [sql, values] = mockExecute.mock.calls[0];
+    expect(sql.toUpperCase()).toContain("DELETE");
+    expect(values).toEqual(["identity-1"]);
+  });
+});
+
+describe("insertNode with identity snapshot", () => {
+  it("persists identityName/identitySymbol as identity_name/identity_symbol columns", async () => {
+    await insertNode("session-1", {
+      id: "n1",
+      type: "prompt",
+      position: { x: 0, y: 0 },
+      data: { text: "hi", identityName: "Researcher", identitySymbol: "R" },
+    });
+    const [, values] = mockExecute.mock.calls[0];
+    expect(values).toEqual(expect.arrayContaining(["Researcher", "R"]));
+  });
+
+  it("persists null identity columns when no identity snapshot is present", async () => {
+    await insertNode("session-1", {
+      id: "n1",
+      type: "prompt",
+      position: { x: 0, y: 0 },
+      data: { text: "hi" },
+    });
+    const [, values] = mockExecute.mock.calls[0];
+    expect(values).toContain(null);
+  });
+});
+
+describe("loadSessionGraph with identity snapshot", () => {
+  it("maps identity_name/identity_symbol columns back into data.identityName/identitySymbol", async () => {
+    mockSelect
+      .mockResolvedValueOnce([
+        {
+          id: "n1",
+          type: "prompt",
+          text: "hello",
+          position_x: 0,
+          position_y: 0,
+          identity_name: "Researcher",
+          identity_symbol: "R",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const { nodes } = await loadSessionGraph("session-1");
+    expect(nodes[0].data.identityName).toBe("Researcher");
+    expect(nodes[0].data.identitySymbol).toBe("R");
+  });
+
+  it("leaves identityName/identitySymbol undefined when the columns are null", async () => {
+    mockSelect
+      .mockResolvedValueOnce([
+        {
+          id: "n1",
+          type: "prompt",
+          text: "hello",
+          position_x: 0,
+          position_y: 0,
+          identity_name: null,
+          identity_symbol: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const { nodes } = await loadSessionGraph("session-1");
+    expect(nodes[0].data.identityName).toBeUndefined();
+    expect(nodes[0].data.identitySymbol).toBeUndefined();
   });
 });

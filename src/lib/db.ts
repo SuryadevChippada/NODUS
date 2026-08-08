@@ -1,6 +1,11 @@
 import Database from "@tauri-apps/plugin-sql";
 import type { GraphNode, GraphEdge } from "../types/graph";
 import type { SuggestedBranch } from "../types/provider";
+import type { Identity } from "../types/identity";
+import {
+  DEFAULT_IDENTITY_NAME,
+  DEFAULT_IDENTITY_SYMBOL,
+} from "../types/identity";
 
 const DB_URL = "sqlite:nodus.db";
 
@@ -61,9 +66,11 @@ export async function loadSessionGraph(
       position_x: number;
       position_y: number;
       suggested_branches: string | null;
+      identity_name: string | null;
+      identity_symbol: string | null;
     }[]
   >(
-    "SELECT id, type, text, position_x, position_y, suggested_branches FROM nodes WHERE session_id = $1",
+    "SELECT id, type, text, position_x, position_y, suggested_branches, identity_name, identity_symbol FROM nodes WHERE session_id = $1",
     [sessionId],
   );
   const edgeRows = await db.select<
@@ -82,6 +89,8 @@ export async function loadSessionGraph(
       suggestedBranches: row.suggested_branches
         ? JSON.parse(row.suggested_branches)
         : undefined,
+      identityName: row.identity_name ?? undefined,
+      identitySymbol: row.identity_symbol ?? undefined,
     },
   }));
   const edges: GraphEdge[] = edgeRows.map((row) => ({
@@ -100,8 +109,8 @@ export async function insertNode(
   const db = await getDb();
   const now = new Date().toISOString();
   await db.execute(
-    `INSERT INTO nodes (id, session_id, type, text, position_x, position_y, suggested_branches, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    `INSERT INTO nodes (id, session_id, type, text, position_x, position_y, suggested_branches, identity_name, identity_symbol, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       node.id,
       sessionId,
@@ -112,6 +121,8 @@ export async function insertNode(
       node.data.suggestedBranches
         ? JSON.stringify(node.data.suggestedBranches)
         : null,
+      node.data.identityName ?? null,
+      node.data.identitySymbol ?? null,
       now,
       now,
     ],
@@ -180,4 +191,117 @@ export async function insertEdge(
 export async function deleteEdge(edgeId: string): Promise<void> {
   const db = await getDb();
   await db.execute("DELETE FROM edges WHERE id = $1", [edgeId]);
+}
+
+interface IdentityRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  symbol: string;
+  preferred_model: string | null;
+  response_style: string | null;
+}
+
+function rowToIdentity(row: IdentityRow): Identity {
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    name: row.name,
+    symbol: row.symbol,
+    preferredModel: row.preferred_model,
+    responseStyle: row.response_style,
+  };
+}
+
+export async function ensureDefaultIdentity(
+  workspaceId: string,
+): Promise<Identity> {
+  const db = await getDb();
+  const existing = await db.select<IdentityRow[]>(
+    "SELECT id, workspace_id, name, symbol, preferred_model, response_style FROM identities WHERE workspace_id = $1 ORDER BY created_at ASC LIMIT 1",
+    [workspaceId],
+  );
+  if (existing.length > 0) {
+    return rowToIdentity(existing[0]);
+  }
+
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await db.execute(
+    "INSERT INTO identities (id, workspace_id, name, symbol, preferred_model, response_style, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    [
+      id,
+      workspaceId,
+      DEFAULT_IDENTITY_NAME,
+      DEFAULT_IDENTITY_SYMBOL,
+      null,
+      null,
+      now,
+      now,
+    ],
+  );
+  return {
+    id,
+    workspaceId,
+    name: DEFAULT_IDENTITY_NAME,
+    symbol: DEFAULT_IDENTITY_SYMBOL,
+    preferredModel: null,
+    responseStyle: null,
+  };
+}
+
+export async function listIdentities(workspaceId: string): Promise<Identity[]> {
+  const db = await getDb();
+  const rows = await db.select<IdentityRow[]>(
+    "SELECT id, workspace_id, name, symbol, preferred_model, response_style FROM identities WHERE workspace_id = $1 ORDER BY created_at ASC",
+    [workspaceId],
+  );
+  return rows.map(rowToIdentity);
+}
+
+export async function insertIdentity(identity: Identity): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "INSERT INTO identities (id, workspace_id, name, symbol, preferred_model, response_style, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    [
+      identity.id,
+      identity.workspaceId,
+      identity.name,
+      identity.symbol,
+      identity.preferredModel,
+      identity.responseStyle,
+      now,
+      now,
+    ],
+  );
+}
+
+export async function updateIdentity(
+  id: string,
+  updates: {
+    name: string;
+    symbol: string;
+    preferredModel: string | null;
+    responseStyle: string | null;
+  },
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE identities SET name = $1, symbol = $2, preferred_model = $3, response_style = $4, updated_at = $5 WHERE id = $6",
+    [
+      updates.name,
+      updates.symbol,
+      updates.preferredModel,
+      updates.responseStyle,
+      now,
+      id,
+    ],
+  );
+}
+
+export async function deleteIdentity(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM identities WHERE id = $1", [id]);
 }

@@ -59,6 +59,27 @@ fn migrations() -> Vec<Migration> {
             sql: "ALTER TABLE nodes ADD COLUMN suggested_branches TEXT;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add identities table and node identity snapshot columns",
+            sql: r#"
+            CREATE TABLE identities (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                preferred_model TEXT,
+                response_style TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX idx_identities_workspace_id ON identities(workspace_id);
+
+            ALTER TABLE nodes ADD COLUMN identity_name TEXT;
+            ALTER TABLE nodes ADD COLUMN identity_symbol TEXT;
+        "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
