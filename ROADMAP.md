@@ -1,7 +1,7 @@
 # Roadmap
 
-Roadmap and TODO are tracked in the GitHub Project:
-[github.com/users/SuryadevChippada/projects/6](https://github.com/users/SuryadevChippada/projects/6)
+Roadmap items and TODOs are tracked in
+[GitHub Project #6](https://github.com/users/SuryadevChippada/projects/6).
 
 Each phase is an epic issue (`type: epic`) with its own milestone, in the
 priority order NODUS is built in. See
