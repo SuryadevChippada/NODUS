@@ -83,9 +83,17 @@ vi.mock("../lib/db", () => ({
 vi.mock("../lib/providers/mockProvider", () => ({
   generateMockResponse: vi.fn(),
 }));
+vi.mock("../lib/providers/ollamaProvider", () => ({
+  generateOllamaResponse: vi.fn(),
+}));
+vi.mock("../lib/providers/ollamaClient", () => ({
+  checkOllamaHealth: vi.fn(),
+}));
 
 import * as db from "../lib/db";
 import { generateMockResponse } from "../lib/providers/mockProvider";
+import { generateOllamaResponse } from "../lib/providers/ollamaProvider";
+import { checkOllamaHealth } from "../lib/providers/ollamaClient";
 
 describe("useGraphStore hydration", () => {
   beforeEach(() => {
@@ -495,6 +503,7 @@ describe("useGraphStore delete actions", () => {
 describe("useGraphStore.generateResponse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(checkOllamaHealth).mockResolvedValue(false);
     useGraphStore.setState({
       sessionId: "s1",
       generatingNodeId: null,
@@ -665,6 +674,160 @@ describe("useGraphStore.generateResponse", () => {
     rejectGenerate(new DOMException("Generation cancelled", "AbortError"));
     await generatePromise;
 
+    expect(useGraphStore.getState().generatingNodeId).toBeNull();
+  });
+});
+
+describe("useGraphStore.generateResponse provider selection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useGraphStore.setState({
+      sessionId: "s1",
+      generatingNodeId: null,
+      lastGenerationProvider: null,
+      nodes: [
+        {
+          id: "p1",
+          type: "prompt",
+          position: { x: 0, y: 0 },
+          data: { text: "question" },
+        },
+      ],
+      edges: [],
+    });
+  });
+
+  it("uses the Ollama provider when it's healthy", async () => {
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    vi.mocked(generateOllamaResponse).mockResolvedValue({
+      title: "T",
+      answer: "ollama answer",
+      suggestedBranches: [
+        { label: "A", prompt: "a" },
+        { label: "B", prompt: "b" },
+        { label: "C", prompt: "c" },
+      ],
+    });
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    expect(generateOllamaResponse).toHaveBeenCalled();
+    expect(vi.mocked(generateMockResponse)).not.toHaveBeenCalled();
+    expect(useGraphStore.getState().lastGenerationProvider).toBe("ollama");
+  });
+
+  it("falls back to the mock provider when Ollama is not healthy", async () => {
+    vi.mocked(checkOllamaHealth).mockResolvedValue(false);
+    vi.mocked(generateMockResponse).mockResolvedValue({
+      title: "T",
+      answer: "mock answer",
+      suggestedBranches: [
+        { label: "A", prompt: "a" },
+        { label: "B", prompt: "b" },
+        { label: "C", prompt: "c" },
+      ],
+    });
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    expect(generateOllamaResponse).not.toHaveBeenCalled();
+    expect(vi.mocked(generateMockResponse)).toHaveBeenCalled();
+    expect(useGraphStore.getState().lastGenerationProvider).toBe("mock");
+  });
+
+  it("falls back to the mock provider when Ollama is healthy but the generation call itself throws", async () => {
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    vi.mocked(generateOllamaResponse).mockRejectedValue(
+      new Error("model crashed"),
+    );
+    vi.mocked(generateMockResponse).mockResolvedValue({
+      title: "T",
+      answer: "mock answer",
+      suggestedBranches: [
+        { label: "A", prompt: "a" },
+        { label: "B", prompt: "b" },
+        { label: "C", prompt: "c" },
+      ],
+    });
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    expect(useGraphStore.getState().lastGenerationProvider).toBe("mock");
+    const responseNode = useGraphStore
+      .getState()
+      .nodes.find((n) => n.id !== "p1");
+    expect(responseNode?.data.text).toBe("mock answer");
+  });
+
+  it("clears Ollama's partial text before the mock's own stream starts, so they never visibly concatenate", async () => {
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    vi.mocked(generateOllamaResponse).mockImplementation(
+      async (_context, options) => {
+        options.onToken("ollama partial ");
+        throw new Error("connection dropped");
+      },
+    );
+
+    let textDuringMockFirstToken: string | undefined;
+    vi.mocked(generateMockResponse).mockImplementation(
+      async (_context, options) => {
+        options.onToken("mock ");
+        textDuringMockFirstToken = useGraphStore
+          .getState()
+          .nodes.find((n) => n.id !== "p1")?.data.text;
+        return {
+          title: "T",
+          answer: "mock answer",
+          suggestedBranches: [
+            { label: "A", prompt: "a" },
+            { label: "B", prompt: "b" },
+            { label: "C", prompt: "c" },
+          ],
+        };
+      },
+    );
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    // The assertion that matters: at the moment the mock's own stream
+    // produced its first token, the node's text must not still contain
+    // Ollama's leftover partial answer. Checking only the final text
+    // (after the mock's full completion overwrites it) would pass even
+    // without the fix, since completion always overwrites wholesale.
+    expect(textDuringMockFirstToken).toBe("mock ");
+    expect(textDuringMockFirstToken).not.toContain("ollama partial");
+  });
+
+  it("treats a real in-flight Ollama abort as cancellation, not a failure to fall back from", async () => {
+    // @tauri-apps/plugin-http does NOT reject with a DOMException on a real
+    // in-flight abort — it rejects with a plain Error (or a bare string via
+    // the stream controller), message "Request cancelled". A discriminator
+    // that only matched `DOMException` + "AbortError" (the shape the mock
+    // provider and the pre-request-abort paths use) missed this real shape
+    // entirely, misclassifying a user's Stop click as an Ollama failure.
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    let rejectGenerate: (error: unknown) => void = () => {};
+    vi.mocked(generateOllamaResponse).mockImplementation(
+      (_context, options) => {
+        options.onToken("partial ollama answer");
+        return new Promise((_resolve, reject) => {
+          rejectGenerate = reject;
+        });
+      },
+    );
+
+    const generatePromise = useGraphStore.getState().generateResponse("p1");
+    await Promise.resolve();
+
+    useGraphStore.getState().cancelGeneration();
+    rejectGenerate(new Error("Request cancelled"));
+    await generatePromise;
+
+    expect(generateMockResponse).not.toHaveBeenCalled();
+    const responseNode = useGraphStore
+      .getState()
+      .nodes.find((n) => n.id !== "p1");
+    expect(responseNode?.data.text).toBe("partial ollama answer");
     expect(useGraphStore.getState().generatingNodeId).toBeNull();
   });
 });
