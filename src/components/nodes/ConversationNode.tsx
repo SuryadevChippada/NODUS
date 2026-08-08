@@ -16,6 +16,7 @@ interface ConversationNodeProps extends NodeProps<ConversationNodeType> {
 export function ConversationNode({
   id,
   data,
+  type,
   label,
   borderClass,
   labelClass,
@@ -34,6 +35,10 @@ export function ConversationNode({
   const childCount = useGraphStore(
     (state) => state.edges.filter((edge) => edge.source === id).length,
   );
+  const generatingNodeId = useGraphStore((state) => state.generatingNodeId);
+  const generateResponse = useGraphStore((state) => state.generateResponse);
+  const cancelGeneration = useGraphStore((state) => state.cancelGeneration);
+  const isGenerating = generatingNodeId === id;
 
   const startEdit = () => {
     setDraftText(data.text);
@@ -115,6 +120,24 @@ export function ConversationNode({
         >
           Delete
         </button>
+        {type === "prompt" && (
+          <button
+            type="button"
+            onClick={() => generateResponse(id)}
+            className="rounded px-2 py-1 hover:bg-slate-700"
+          >
+            Generate
+          </button>
+        )}
+        {isGenerating && (
+          <button
+            type="button"
+            onClick={cancelGeneration}
+            className="rounded px-2 py-1 text-amber-400 hover:bg-slate-700"
+          >
+            Stop
+          </button>
+        )}
       </NodeToolbar>
 
       <Handle type="target" position={Position.Top} />
@@ -144,6 +167,28 @@ export function ConversationNode({
         />
       ) : (
         <p>{data.text}</p>
+      )}
+
+      {isGenerating && (
+        <p className="mt-1 text-xs text-amber-400">❯ generating…</p>
+      )}
+
+      {data.suggestedBranches && data.suggestedBranches.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {data.suggestedBranches.map((branch) => (
+            <button
+              key={branch.label}
+              type="button"
+              onClick={() => {
+                const newNodeId = addNode(id, branch.prompt);
+                generateResponse(newNodeId);
+              }}
+              className="rounded-full border border-slate-600 px-2 py-0.5 text-xs text-cyan-300 hover:bg-slate-700"
+            >
+              {branch.label}
+            </button>
+          ))}
+        </div>
       )}
 
       <Handle type="source" position={Position.Bottom} />

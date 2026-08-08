@@ -48,7 +48,7 @@ interface GraphState {
   onNodesChange: (changes: NodeChange<Node<GraphNodeData>>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
-  addNode: (parentId: string | null, text: string) => void;
+  addNode: (parentId: string | null, text: string) => string;
   updateNodeText: (nodeId: string, text: string) => void;
   deleteNodeWithDescendants: (nodeId: string) => void;
   deleteNodeAndReparentChildren: (nodeId: string) => void;
@@ -157,10 +157,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   },
 
   addNode: (parentId, text) => {
-    const sessionId = get().sessionId;
-    if (!sessionId) return;
-
     const id = crypto.randomUUID();
+    const sessionId = get().sessionId;
+    if (!sessionId) return id;
+
     const nodes = get().nodes;
     const edges = get().edges;
 
@@ -204,6 +204,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         console.error("Failed to persist new edge", error),
       );
     }
+
+    return id;
   },
 
   updateNodeText: (nodeId, text) => {

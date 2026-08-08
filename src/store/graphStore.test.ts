@@ -348,10 +348,11 @@ describe("useGraphStore.addNode", () => {
   });
 
   it("adds a new root node with no parent and no new edge", () => {
-    useGraphStore.getState().addNode(null, "New node");
+    const newNodeId = useGraphStore.getState().addNode(null, "New node");
     const state = useGraphStore.getState();
     expect(state.nodes).toHaveLength(2);
     const newNode = state.nodes.find((n) => n.id !== "a");
+    expect(newNodeId).toBe(newNode?.id);
     expect(newNode).toMatchObject({
       type: "prompt",
       data: { text: "New node" },
@@ -362,10 +363,11 @@ describe("useGraphStore.addNode", () => {
   });
 
   it("adds a child node connected to the given parent", () => {
-    useGraphStore.getState().addNode("a", "Child node");
+    const newNodeId = useGraphStore.getState().addNode("a", "Child node");
     const state = useGraphStore.getState();
     expect(state.nodes).toHaveLength(2);
     const newNode = state.nodes.find((n) => n.id !== "a");
+    expect(newNodeId).toBe(newNode?.id);
     expect(state.edges).toHaveLength(1);
     expect(state.edges[0]).toMatchObject({ source: "a", target: newNode?.id });
     expect(vi.mocked(db.insertEdge)).toHaveBeenCalledWith(

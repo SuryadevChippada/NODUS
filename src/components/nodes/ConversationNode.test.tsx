@@ -22,12 +22,21 @@ const mockAddNode = vi.fn();
 const mockUpdateNodeText = vi.fn();
 const mockDeleteWithDescendants = vi.fn();
 const mockDeleteAndReparent = vi.fn();
+const mockGenerateResponse = vi.fn();
+const mockCancelGeneration = vi.fn();
 // vi.mock is hoisted above this file's own top-level statements, so a plain
 // `const mockConfirm = vi.fn()` would still be in the temporal dead zone
 // when the factory below runs (it's forced to evaluate early because
 // ConversationNode.tsx imports "@tauri-apps/plugin-dialog" ahead of the
 // store). vi.hoisted() hoists the value itself alongside vi.mock.
 const mockConfirm = vi.hoisted(() => vi.fn());
+
+// Plain `let`, not vi.fn/vi.hoisted: it's only read inside the factory's
+// returned selector closure, which runs at render time (well after this
+// module's top-level `let` has initialized) — same lazy-evaluation reason
+// mockAddNode et al. above don't need vi.hoisted either. Tests mutate this
+// directly to control which node the mocked store reports as generating.
+let mockGeneratingNodeId: string | null = null;
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   confirm: mockConfirm,
@@ -41,6 +50,9 @@ vi.mock("../../store/graphStore", () => ({
       deleteNodeWithDescendants: mockDeleteWithDescendants,
       deleteNodeAndReparentChildren: mockDeleteAndReparent,
       edges: [{ id: "e1", source: "n1", target: "child1" }],
+      generatingNodeId: mockGeneratingNodeId,
+      generateResponse: mockGenerateResponse,
+      cancelGeneration: mockCancelGeneration,
     }),
 }));
 
@@ -62,6 +74,7 @@ const baseProps = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockConfirm.mockResolvedValue(true);
+  mockGeneratingNodeId = null;
   Object.assign(navigator, {
     clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
@@ -121,5 +134,53 @@ describe("ConversationNode", () => {
     await vi.waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
     expect(mockDeleteWithDescendants).not.toHaveBeenCalled();
     expect(mockDeleteAndReparent).not.toHaveBeenCalled();
+  });
+});
+
+describe("ConversationNode generation UI", () => {
+  it("shows a Generate button on a prompt node and calls generateResponse on click", () => {
+    render(<ConversationNode {...baseProps} type="prompt" />);
+    fireEvent.click(screen.getByRole("button", { name: /generate/i }));
+    expect(mockGenerateResponse).toHaveBeenCalledWith("n1");
+  });
+
+  it("does not show a Generate button on a response node", () => {
+    render(<ConversationNode {...baseProps} type="response" />);
+    expect(
+      screen.queryByRole("button", { name: /generate/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a Stop button and a generating indicator while this node is generating", () => {
+    mockGeneratingNodeId = "n1";
+    render(<ConversationNode {...baseProps} type="response" />);
+    expect(screen.getByRole("button", { name: /stop/i })).toBeInTheDocument();
+    expect(screen.getByText(/generating/i)).toBeInTheDocument();
+  });
+
+  it("clicking Stop calls cancelGeneration", () => {
+    mockGeneratingNodeId = "n1";
+    render(<ConversationNode {...baseProps} type="response" />);
+    fireEvent.click(screen.getByRole("button", { name: /stop/i }));
+    expect(mockCancelGeneration).toHaveBeenCalled();
+  });
+
+  it("renders suggested-branch chips on a response node that has them, and clicking one calls addNode then generateResponse", () => {
+    mockAddNode.mockReturnValue("new-node-id");
+    render(
+      <ConversationNode
+        {...baseProps}
+        type="response"
+        data={{
+          text: "an answer",
+          suggestedBranches: [
+            { label: "Explain more", prompt: "explain in more depth" },
+          ],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Explain more" }));
+    expect(mockAddNode).toHaveBeenCalledWith("n1", "explain in more depth");
+    expect(mockGenerateResponse).toHaveBeenCalledWith("new-node-id");
   });
 });
