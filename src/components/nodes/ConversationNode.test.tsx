@@ -183,4 +183,22 @@ describe("ConversationNode generation UI", () => {
     expect(mockAddNode).toHaveBeenCalledWith("n1", "explain in more depth");
     expect(mockGenerateResponse).toHaveBeenCalledWith("new-node-id");
   });
+
+  it("disables Generate and branch chips while any generation is already in flight", () => {
+    mockGeneratingNodeId = "some-other-node";
+    render(
+      <ConversationNode
+        {...baseProps}
+        type="prompt"
+        data={{
+          text: "an answer",
+          suggestedBranches: [
+            { label: "Explain more", prompt: "explain in more depth" },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /generate/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Explain more" })).toBeDisabled();
+  });
 });

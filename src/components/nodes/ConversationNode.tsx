@@ -124,7 +124,8 @@ export function ConversationNode({
           <button
             type="button"
             onClick={() => generateResponse(id)}
-            className="rounded px-2 py-1 hover:bg-slate-700"
+            disabled={generatingNodeId !== null}
+            className="rounded px-2 py-1 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
           >
             Generate
           </button>
@@ -183,7 +184,8 @@ export function ConversationNode({
                 const newNodeId = addNode(id, branch.prompt);
                 generateResponse(newNodeId);
               }}
-              className="rounded-full border border-slate-600 px-2 py-0.5 text-xs text-cyan-300 hover:bg-slate-700"
+              disabled={generatingNodeId !== null}
+              className="rounded-full border border-slate-600 px-2 py-0.5 text-xs text-cyan-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
             >
               {branch.label}
             </button>
