@@ -78,6 +78,11 @@ vi.mock("../lib/db", () => ({
   deleteNode: vi.fn().mockResolvedValue(undefined),
   insertEdge: vi.fn().mockResolvedValue(undefined),
   deleteEdge: vi.fn().mockResolvedValue(undefined),
+  ensureDefaultIdentity: vi.fn(),
+  listIdentities: vi.fn(),
+  insertIdentity: vi.fn().mockResolvedValue(undefined),
+  updateIdentity: vi.fn().mockResolvedValue(undefined),
+  deleteIdentity: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../lib/providers/mockProvider", () => ({
@@ -100,6 +105,24 @@ describe("useGraphStore hydration", () => {
     vi.clearAllMocks();
     useGraphStore.setState(useGraphStore.getInitialState());
     __resetHydratePromiseForTests();
+    vi.mocked(db.ensureDefaultIdentity).mockResolvedValue({
+      id: "identity-default",
+      workspaceId: "workspace-1",
+      name: "Default",
+      symbol: "❯",
+      preferredModel: null,
+      responseStyle: null,
+    });
+    vi.mocked(db.listIdentities).mockResolvedValue([
+      {
+        id: "identity-default",
+        workspaceId: "workspace-1",
+        name: "Default",
+        symbol: "❯",
+        preferredModel: null,
+        responseStyle: null,
+      },
+    ]);
   });
 
   it("seeds the sample graph into the database on a brand-new session", async () => {
@@ -829,5 +852,179 @@ describe("useGraphStore.generateResponse provider selection", () => {
       .nodes.find((n) => n.id !== "p1");
     expect(responseNode?.data.text).toBe("partial ollama answer");
     expect(useGraphStore.getState().generatingNodeId).toBeNull();
+  });
+});
+
+describe("identity state and actions", () => {
+  beforeEach(() => {
+    // Every other describe block in this file clears mock call history in
+    // its beforeEach; this one needs it too so an earlier test's
+    // db.deleteIdentity call doesn't leak into a later "not called"
+    // assertion (see "deleteIdentity refuses to delete the last remaining
+    // identity" below).
+    vi.clearAllMocks();
+    __resetHydratePromiseForTests();
+    useGraphStore.setState({
+      workspaceId: "workspace-1",
+      identities: [
+        {
+          id: "identity-1",
+          workspaceId: "workspace-1",
+          name: "Default",
+          symbol: "❯",
+          preferredModel: null,
+          responseStyle: null,
+        },
+      ],
+      activeIdentityId: "identity-1",
+    });
+  });
+
+  it("hydrate() loads identities and sets activeIdentityId to the earliest one", async () => {
+    vi.mocked(db.ensureDefaultWorkspaceAndSession).mockResolvedValue({
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      isNewSession: false,
+    });
+    vi.mocked(db.loadSessionGraph).mockResolvedValue({ nodes: [], edges: [] });
+    vi.mocked(db.listIdentities).mockResolvedValue([
+      {
+        id: "identity-existing",
+        workspaceId: "workspace-1",
+        name: "Researcher",
+        symbol: "R",
+        preferredModel: "llama3.1:latest",
+        responseStyle: null,
+      },
+    ]);
+    vi.mocked(db.ensureDefaultIdentity).mockResolvedValue({
+      id: "identity-existing",
+      workspaceId: "workspace-1",
+      name: "Researcher",
+      symbol: "R",
+      preferredModel: "llama3.1:latest",
+      responseStyle: null,
+    });
+
+    await useGraphStore.getState().hydrate();
+
+    expect(useGraphStore.getState().identities).toEqual([
+      {
+        id: "identity-existing",
+        workspaceId: "workspace-1",
+        name: "Researcher",
+        symbol: "R",
+        preferredModel: "llama3.1:latest",
+        responseStyle: null,
+      },
+    ]);
+    expect(useGraphStore.getState().activeIdentityId).toBe("identity-existing");
+    expect(useGraphStore.getState().workspaceId).toBe("workspace-1");
+  });
+
+  it("setActiveIdentity switches the active identity", () => {
+    useGraphStore.getState().setActiveIdentity("identity-2");
+    expect(useGraphStore.getState().activeIdentityId).toBe("identity-2");
+  });
+
+  it("createIdentity adds a new identity and persists it", () => {
+    const newId = useGraphStore.getState().createIdentity({
+      name: "Researcher",
+      symbol: "R",
+      preferredModel: "llama3.1:latest",
+      responseStyle: "concise",
+    });
+    const identities = useGraphStore.getState().identities;
+    expect(identities).toHaveLength(2);
+    expect(identities.find((i) => i.id === newId)).toEqual({
+      id: newId,
+      workspaceId: "workspace-1",
+      name: "Researcher",
+      symbol: "R",
+      preferredModel: "llama3.1:latest",
+      responseStyle: "concise",
+    });
+    expect(db.insertIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ id: newId, name: "Researcher" }),
+    );
+  });
+
+  it("updateIdentity edits an existing identity in place and persists it", () => {
+    useGraphStore.getState().updateIdentity("identity-1", {
+      name: "Renamed",
+      symbol: "X",
+      preferredModel: "qwen2:7b",
+      responseStyle: "detailed",
+    });
+    const identity = useGraphStore
+      .getState()
+      .identities.find((i) => i.id === "identity-1");
+    expect(identity).toEqual({
+      id: "identity-1",
+      workspaceId: "workspace-1",
+      name: "Renamed",
+      symbol: "X",
+      preferredModel: "qwen2:7b",
+      responseStyle: "detailed",
+    });
+    expect(db.updateIdentity).toHaveBeenCalledWith(
+      "identity-1",
+      expect.objectContaining({ name: "Renamed" }),
+    );
+  });
+
+  it("deleteIdentity removes a non-active identity", () => {
+    useGraphStore.setState({
+      identities: [
+        ...useGraphStore.getState().identities,
+        {
+          id: "identity-2",
+          workspaceId: "workspace-1",
+          name: "Second",
+          symbol: "S",
+          preferredModel: null,
+          responseStyle: null,
+        },
+      ],
+    });
+    useGraphStore.getState().deleteIdentity("identity-2");
+    expect(
+      useGraphStore.getState().identities.find((i) => i.id === "identity-2"),
+    ).toBeUndefined();
+    expect(useGraphStore.getState().activeIdentityId).toBe("identity-1");
+    expect(db.deleteIdentity).toHaveBeenCalledWith("identity-2");
+  });
+
+  it("deleteIdentity refuses to delete the last remaining identity", () => {
+    useGraphStore.getState().deleteIdentity("identity-1");
+    expect(useGraphStore.getState().identities).toHaveLength(1);
+    expect(db.deleteIdentity).not.toHaveBeenCalled();
+  });
+
+  it("deleteIdentity falls back to another identity when deleting the active one", () => {
+    useGraphStore.setState({
+      identities: [
+        ...useGraphStore.getState().identities,
+        {
+          id: "identity-2",
+          workspaceId: "workspace-1",
+          name: "Second",
+          symbol: "S",
+          preferredModel: null,
+          responseStyle: null,
+        },
+      ],
+      activeIdentityId: "identity-1",
+    });
+    useGraphStore.getState().deleteIdentity("identity-1");
+    expect(useGraphStore.getState().activeIdentityId).toBe("identity-2");
+  });
+
+  it("addNode snapshots the active identity's name and symbol onto the new node", () => {
+    useGraphStore.setState({ sessionId: "session-1", nodes: [], edges: [] });
+    const newId = useGraphStore.getState().addNode(null, "hello");
+    const node = useGraphStore.getState().nodes.find((n) => n.id === newId);
+    expect(node?.data.identityName).toBe("Default");
+    expect(node?.data.identitySymbol).toBe("❯");
   });
 });

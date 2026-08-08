@@ -11,6 +11,7 @@ import {
 } from "@xyflow/react";
 import { sampleNodes, sampleEdges } from "../lib/sampleGraph";
 import type { GraphNode, GraphNodeData } from "../types/graph";
+import type { Identity } from "../types/identity";
 import * as db from "../lib/db";
 import {
   getChildIds,
@@ -45,8 +46,11 @@ export function __resetHydratePromiseForTests(): void {
 
 interface GraphState {
   sessionId: string | null;
+  workspaceId: string | null;
   nodes: Node<GraphNodeData>[];
   edges: Edge[];
+  identities: Identity[];
+  activeIdentityId: string | null;
   hydrate: () => Promise<void>;
   onNodesChange: (changes: NodeChange<Node<GraphNodeData>>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -59,20 +63,43 @@ interface GraphState {
   lastGenerationProvider: "ollama" | "mock" | null;
   generateResponse: (promptNodeId: string) => Promise<void>;
   cancelGeneration: () => void;
+  setActiveIdentity: (id: string) => void;
+  createIdentity: (input: {
+    name: string;
+    symbol: string;
+    preferredModel: string | null;
+    responseStyle: string | null;
+  }) => string;
+  updateIdentity: (
+    id: string,
+    updates: {
+      name: string;
+      symbol: string;
+      preferredModel: string | null;
+      responseStyle: string | null;
+    },
+  ) => void;
+  deleteIdentity: (id: string) => void;
 }
 
 export const useGraphStore = create<GraphState>((set, get) => ({
   sessionId: null,
+  workspaceId: null,
   nodes: sampleNodes,
   edges: sampleEdges,
+  identities: [],
+  activeIdentityId: null,
   generatingNodeId: null,
   lastGenerationProvider: null,
 
   hydrate: () => {
     if (!hydratePromise) {
       hydratePromise = (async () => {
-        const { sessionId, isNewSession } =
+        const { workspaceId, sessionId, isNewSession } =
           await db.ensureDefaultWorkspaceAndSession();
+
+        const defaultIdentity = await db.ensureDefaultIdentity(workspaceId);
+        const identities = await db.listIdentities(workspaceId);
 
         if (isNewSession) {
           for (const node of sampleNodes) {
@@ -81,12 +108,26 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           for (const edge of sampleEdges) {
             await db.insertEdge(sessionId, edge);
           }
-          set({ sessionId, nodes: sampleNodes, edges: sampleEdges });
+          set({
+            workspaceId,
+            sessionId,
+            nodes: sampleNodes,
+            edges: sampleEdges,
+            identities,
+            activeIdentityId: defaultIdentity.id,
+          });
           return;
         }
 
         const { nodes, edges } = await db.loadSessionGraph(sessionId);
-        set({ sessionId, nodes, edges });
+        set({
+          workspaceId,
+          sessionId,
+          nodes,
+          edges,
+          identities,
+          activeIdentityId: defaultIdentity.id,
+        });
       })();
     }
     return hydratePromise;
@@ -186,11 +227,19 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       position = { x: rootCount * 260, y: -160 };
     }
 
+    const activeIdentity = get().identities.find(
+      (identity) => identity.id === get().activeIdentityId,
+    );
+
     const newNode: GraphNode = {
       id,
       type: "prompt",
       position,
-      data: { text },
+      data: {
+        text,
+        identityName: activeIdentity?.name,
+        identitySymbol: activeIdentity?.symbol,
+      },
     };
 
     set({ nodes: [...nodes, newNode] });
@@ -484,5 +533,53 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
   cancelGeneration: () => {
     activeAbortController?.abort();
+  },
+
+  setActiveIdentity: (id) => {
+    set({ activeIdentityId: id });
+  },
+
+  createIdentity: (input) => {
+    const workspaceId = get().workspaceId;
+    if (!workspaceId) return "";
+    const identity: Identity = {
+      id: crypto.randomUUID(),
+      workspaceId,
+      name: input.name,
+      symbol: input.symbol,
+      preferredModel: input.preferredModel,
+      responseStyle: input.responseStyle,
+    };
+    set({ identities: [...get().identities, identity] });
+    db.insertIdentity(identity).catch((error) =>
+      console.error("Failed to persist new identity", error),
+    );
+    return identity.id;
+  },
+
+  updateIdentity: (id, updates) => {
+    set({
+      identities: get().identities.map((identity) =>
+        identity.id === id ? { ...identity, ...updates } : identity,
+      ),
+    });
+    db.updateIdentity(id, updates).catch((error) =>
+      console.error("Failed to persist identity update", error),
+    );
+  },
+
+  deleteIdentity: (id) => {
+    const identities = get().identities;
+    // ponytail: always keep at least one identity — a graph with zero
+    // identities has no sane "active identity" for new nodes to snapshot.
+    if (identities.length <= 1) return;
+    const remaining = identities.filter((identity) => identity.id !== id);
+    set({ identities: remaining });
+    if (get().activeIdentityId === id) {
+      set({ activeIdentityId: remaining[0].id });
+    }
+    db.deleteIdentity(id).catch((error) =>
+      console.error("Failed to delete identity", error),
+    );
   },
 }));
