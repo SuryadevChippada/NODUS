@@ -387,7 +387,16 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           // provider's own aborts do — not get silently swapped for a mock
           // generation mid-cancellation. Only a genuine Ollama failure
           // (no models, HTTP error, etc.) falls back.
-          if (error instanceof DOMException && error.name === "AbortError") {
+          //
+          // Check our own controller's aborted state rather than sniffing
+          // the rejection's identity/shape: @tauri-apps/plugin-http does
+          // NOT reject with a DOMException on a real in-flight abort (it
+          // throws/errors with a plain Error or bare string "Request
+          // cancelled"), so matching on DOMException + "AbortError" here
+          // silently misclassified a genuine user cancellation as an
+          // Ollama failure and wiped the partial answer via the fallback
+          // path below.
+          if (abortController.signal.aborted) {
             throw error;
           }
           console.error(

@@ -797,4 +797,37 @@ describe("useGraphStore.generateResponse provider selection", () => {
     expect(textDuringMockFirstToken).toBe("mock ");
     expect(textDuringMockFirstToken).not.toContain("ollama partial");
   });
+
+  it("treats a real in-flight Ollama abort as cancellation, not a failure to fall back from", async () => {
+    // @tauri-apps/plugin-http does NOT reject with a DOMException on a real
+    // in-flight abort — it rejects with a plain Error (or a bare string via
+    // the stream controller), message "Request cancelled". A discriminator
+    // that only matched `DOMException` + "AbortError" (the shape the mock
+    // provider and the pre-request-abort paths use) missed this real shape
+    // entirely, misclassifying a user's Stop click as an Ollama failure.
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    let rejectGenerate: (error: unknown) => void = () => {};
+    vi.mocked(generateOllamaResponse).mockImplementation(
+      (_context, options) => {
+        options.onToken("partial ollama answer");
+        return new Promise((_resolve, reject) => {
+          rejectGenerate = reject;
+        });
+      },
+    );
+
+    const generatePromise = useGraphStore.getState().generateResponse("p1");
+    await Promise.resolve();
+
+    useGraphStore.getState().cancelGeneration();
+    rejectGenerate(new Error("Request cancelled"));
+    await generatePromise;
+
+    expect(generateMockResponse).not.toHaveBeenCalled();
+    const responseNode = useGraphStore
+      .getState()
+      .nodes.find((n) => n.id !== "p1");
+    expect(responseNode?.data.text).toBe("partial ollama answer");
+    expect(useGraphStore.getState().generatingNodeId).toBeNull();
+  });
 });

@@ -177,6 +177,11 @@ export function ConversationNode({
         <p className="mt-1 text-xs text-amber-400">❯ generating…</p>
       )}
 
+      {/* ponytail: lastGenerationProvider is a single global "last
+          generation" flag, not a per-node history — every qualifying
+          response node shows the same value. Upgrade to a persisted
+          per-node record if/when a real model picker makes that
+          distinction matter. */}
       {type === "response" &&
         !isGenerating &&
         data.text.length > 0 &&
