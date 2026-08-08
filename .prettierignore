@@ -1,24 +1,14 @@
-# Ignore directories and files outside Task 1 scope (frontend tooling)
-.github/
-docs/
+# Rust crate — not Prettier's domain
 src-tauri/
-README.md
-CHANGELOG.md
+
+# Plain-text legal document — leave wording untouched
 LICENSE
 
-# Ignore node_modules and other common directories
+# Dependencies and build output
 node_modules/
-.next/
 dist/
 build/
 coverage/
 .git/
 .vscode/
 .idea/
-
-# Only format frontend source files
-!src/
-!vite.config.ts
-!vitest.config.ts
-!tsconfig.json
-!.eslintrc.cjs

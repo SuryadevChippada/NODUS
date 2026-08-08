@@ -3,8 +3,7 @@ name: Documentation problem
 about: Report missing, incorrect or unclear NODUS documentation.
 title: "[Docs]: "
 labels: documentation
-assignees: ''
-
+assignees: ""
 ---
 
 ## Documentation location

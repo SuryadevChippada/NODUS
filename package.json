@@ -1,8 +1,19 @@
 {
   "name": "nodus",
-  "private": true,
+  "private": false,
   "version": "0.1.0",
   "type": "module",
+  "description": "Local-first desktop AI thinking environment where conversations grow as connected visual branches.",
+  "license": "MIT",
+  "author": "Suryadev Chippada",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SuryadevChippada/NODUS.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SuryadevChippada/NODUS/issues"
+  },
+  "homepage": "https://github.com/SuryadevChippada/NODUS#readme",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

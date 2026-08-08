@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Secrets — NODUS stores provider API keys in the OS credential store, never
+# in a file, but this stays as defensive standard hygiene.
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

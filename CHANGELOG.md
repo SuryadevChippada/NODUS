@@ -7,9 +7,23 @@ The format is based on
 
 ## [Unreleased]
 
+No versioned release has been made yet. NODUS is pre-alpha.
+
 ### Added
 
-- Project scaffold: Tauri 2 + React + TypeScript shell.
-- Initial issue templates, community health files.
-
-No versioned release has been made yet. NODUS is pre-alpha.
+- Tauri 2 + React + TypeScript application shell.
+- Interactive node/edge graph canvas (drag, zoom, pan, minimap) with
+  custom prompt/response node rendering.
+- SQLite-backed local persistence — workspace, session, node, and edge
+  data survive an application restart.
+- Node creation, branching, inline editing, copying, and deletion (with
+  a choice between cascading a branch or reparenting its children).
+- A pure, tested branch-context builder: ancestor chain to the root,
+  chronological order, sibling branches excluded.
+- A deterministic, offline mock AI provider: streamed generation,
+  genuine mid-stream cancellation, structured suggested-branch
+  responses with schema validation and safe fallback repair, and
+  click-to-branch-and-generate chaining.
+- Community and contributor infrastructure: `CONTRIBUTING.md`,
+  `CODE_OF_CONDUCT.md`, `SECURITY.md`, `SUPPORT.md`, issue and PR
+  templates, Dependabot configuration, CI workflow.
