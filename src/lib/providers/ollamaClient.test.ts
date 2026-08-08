@@ -107,4 +107,25 @@ describe("listOllamaModels", () => {
     } as unknown as Response);
     await expect(listOllamaModels()).rejects.toThrow();
   });
+
+  it("passes the signal through to fetch and propagates an abort rejection", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    // Real @tauri-apps/plugin-http fetch rejects immediately when called
+    // with an already-aborted signal; simulate that here to confirm
+    // listOllamaModels threads the signal through rather than dropping it.
+    mockFetch.mockImplementation((_input, init) => {
+      if ((init as RequestInit | undefined)?.signal?.aborted) {
+        return Promise.reject(new Error("Request cancelled"));
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ models: [] }),
+      } as unknown as Response);
+    });
+    await expect(listOllamaModels(controller.signal)).rejects.toThrow(
+      "Request cancelled",
+    );
+  });
 });

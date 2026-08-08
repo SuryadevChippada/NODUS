@@ -48,7 +48,7 @@ export async function generateOllamaResponse(
   const { onToken, signal } = options;
   assertNotAborted(signal);
 
-  const models = await listOllamaModels();
+  const models = await listOllamaModels(signal);
   if (models.length === 0) {
     throw new Error("Ollama has no models installed");
   }
@@ -107,6 +107,11 @@ export async function generateOllamaResponse(
   } catch (error) {
     console.error("Failed to fetch suggested branches from Ollama", error);
   }
+  // The catch above swallows AbortError along with every other failure so a
+  // cancelled branches call can't crash the response we already streamed —
+  // but that means a Stop click mid-call would otherwise resolve silently as
+  // a completed generation. Re-check here so cancellation still surfaces.
+  assertNotAborted(signal);
 
   const { response } = parseProviderResponse({
     title: promptText.length > 0 ? promptText.slice(0, 60) : "Untitled",

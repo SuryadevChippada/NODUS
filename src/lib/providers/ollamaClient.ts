@@ -29,8 +29,10 @@ const tagsResponseSchema = z.object({
   models: z.array(z.object({ name: z.string() })),
 });
 
-export async function listOllamaModels(): Promise<string[]> {
-  const res = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
+export async function listOllamaModels(
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const res = await fetch(`${OLLAMA_BASE_URL}/api/tags`, { signal });
   if (!res.ok) {
     throw new Error(`Ollama /api/tags responded with ${res.status}`);
   }

@@ -126,4 +126,42 @@ describe("generateOllamaResponse", () => {
       }),
     ).rejects.toThrow();
   });
+
+  it("rejects rather than resolves when the signal is aborted during the suggested-branches call", async () => {
+    const controller = new AbortController();
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: "qwen2:7b" }] }),
+      })
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          '{"response":"The answer is 4.","done":false}\n',
+          '{"done":true}\n',
+        ]),
+      )
+      .mockImplementationOnce(async () => {
+        // Simulate the user clicking Stop while this specific request is
+        // in flight — the call itself still "succeeds" from fetch's point
+        // of view, but the signal is aborted by the time it resolves.
+        controller.abort();
+        return {
+          ok: true,
+          json: async () => ({
+            response: JSON.stringify([
+              { label: "a", prompt: "a" },
+              { label: "b", prompt: "b" },
+              { label: "c", prompt: "c" },
+            ]),
+          }),
+        };
+      });
+
+    await expect(
+      generateOllamaResponse(context, {
+        onToken: () => {},
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow();
+  });
 });
