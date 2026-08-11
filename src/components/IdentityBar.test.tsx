@@ -68,6 +68,24 @@ describe("IdentityBar", () => {
     ).toBe(true);
   });
 
+  it("edits an existing identity via the manage panel instead of creating a new one", () => {
+    render(<IdentityBar />);
+    fireEvent.click(screen.getByRole("button", { name: /manage identities/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+
+    expect(screen.getByPlaceholderText(/^name$/i)).toHaveValue("Default");
+    expect(screen.getByPlaceholderText(/^symbol$/i)).toHaveValue("❯");
+
+    fireEvent.change(screen.getByPlaceholderText(/^name$/i), {
+      target: { value: "Renamed" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    const identities = useGraphStore.getState().identities;
+    expect(identities).toHaveLength(1); // no duplicate created
+    expect(identities[0].name).toBe("Renamed");
+  });
+
   it("disables Delete for the only remaining identity", () => {
     render(<IdentityBar />);
     fireEvent.click(screen.getByRole("button", { name: /manage identities/i }));
