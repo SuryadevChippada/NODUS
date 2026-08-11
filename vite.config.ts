@@ -26,8 +26,10 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri`, and other worktrees'
+      // source (each has its own dev server; without this, editing a file
+      // in another worktree triggers a spurious reload here too)
+      ignored: ["**/src-tauri/**", "**/.worktrees/**", "**/.superpowers/**"],
     },
   },
   test: {
