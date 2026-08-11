@@ -9,6 +9,7 @@ import "@xyflow/react/dist/style.css";
 import { useGraphStore } from "../store/graphStore";
 import { PromptNode } from "./nodes/PromptNode";
 import { ResponseNode } from "./nodes/ResponseNode";
+import { IdentityBar } from "./IdentityBar";
 
 const nodeTypes = { prompt: PromptNode, response: ResponseNode };
 
@@ -25,6 +26,7 @@ export function GraphCanvas() {
       >
         + New
       </button>
+      <IdentityBar />
       <ReactFlow
         nodes={nodes}
         edges={edges}

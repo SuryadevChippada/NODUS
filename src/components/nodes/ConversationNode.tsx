@@ -170,7 +170,12 @@ export function ConversationNode({
           }}
         />
       ) : (
-        <p>{data.text}</p>
+        <p>
+          {data.identitySymbol && (
+            <span className="mr-1 text-slate-400">{data.identitySymbol}</span>
+          )}
+          {data.text}
+        </p>
       )}
 
       {isGenerating && (

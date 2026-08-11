@@ -228,4 +228,31 @@ describe("ConversationNode generation UI", () => {
     );
     expect(screen.getByText(/mock/i)).toBeInTheDocument();
   });
+
+  it("renders the snapshotted identity symbol before the node text", () => {
+    render(
+      <ConversationNode
+        {...baseProps}
+        type="prompt"
+        data={{
+          text: "hello",
+          identitySymbol: "R",
+          identityName: "Researcher",
+        }}
+      />,
+    );
+    expect(screen.getByText("R")).toBeInTheDocument();
+    expect(screen.getByText("hello")).toBeInTheDocument();
+  });
+
+  it("renders nothing extra when a node has no identity snapshot", () => {
+    render(
+      <ConversationNode
+        {...baseProps}
+        type="prompt"
+        data={{ text: "hello" }}
+      />,
+    );
+    expect(screen.getByText("hello")).toBeInTheDocument();
+  });
 });

@@ -13,6 +13,9 @@ import { sampleNodes, sampleEdges } from "../lib/sampleGraph";
 vi.mock("../lib/db", () => ({
   insertNode: vi.fn().mockResolvedValue(undefined),
   insertEdge: vi.fn().mockResolvedValue(undefined),
+  insertIdentity: vi.fn().mockResolvedValue(undefined),
+  updateIdentity: vi.fn().mockResolvedValue(undefined),
+  deleteIdentity: vi.fn().mockResolvedValue(undefined),
 }));
 
 // jsdom has no layout engine: elements always report 0 offsetWidth/Height,
@@ -68,6 +71,17 @@ beforeEach(() => {
     sessionId: "test-session",
     nodes: sampleNodes,
     edges: sampleEdges,
+    identities: [
+      {
+        id: "identity-1",
+        workspaceId: "workspace-1",
+        name: "Default",
+        symbol: "❯",
+        preferredModel: null,
+        responseStyle: null,
+      },
+    ],
+    activeIdentityId: "identity-1",
   });
 });
 
