@@ -375,6 +375,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const activeIdentity = get().identities.find(
       (identity) => identity.id === get().activeIdentityId,
     );
+    const activeMemories = get()
+      .memories.filter(
+        (memory) =>
+          memory.identityId === null ||
+          memory.identityId === activeIdentity?.id,
+      )
+      .map((memory) => memory.content);
 
     const responseNode: GraphNode = {
       id: responseNodeId,
@@ -457,6 +464,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
             onToken,
             model: activeIdentity?.preferredModel ?? undefined,
             responseStyle: activeIdentity?.responseStyle ?? undefined,
+            memories: activeMemories,
           });
           providerUsed = "ollama";
         } catch (error) {

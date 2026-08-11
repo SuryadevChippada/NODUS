@@ -901,6 +901,61 @@ describe("useGraphStore.generateResponse provider selection", () => {
     expect(responseNode?.data.identitySymbol).toBe("R");
   });
 
+  it("passes global and current-identity memories to generateOllamaResponse, excluding other identities' memories", async () => {
+    useGraphStore.setState({
+      identities: [
+        {
+          id: "identity-1",
+          workspaceId: "workspace-1",
+          name: "Default",
+          symbol: "❯",
+          preferredModel: null,
+          responseStyle: null,
+        },
+      ],
+      activeIdentityId: "identity-1",
+      memories: [
+        {
+          id: "memory-1",
+          workspaceId: "workspace-1",
+          identityId: null,
+          content: "Global fact",
+        },
+        {
+          id: "memory-2",
+          workspaceId: "workspace-1",
+          identityId: "identity-1",
+          content: "Fact for identity-1",
+        },
+        {
+          id: "memory-3",
+          workspaceId: "workspace-1",
+          identityId: "identity-other",
+          content: "Fact for a different identity",
+        },
+      ],
+    });
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    vi.mocked(generateOllamaResponse).mockResolvedValue({
+      title: "T",
+      answer: "answer",
+      suggestedBranches: [
+        { label: "A", prompt: "a" },
+        { label: "B", prompt: "b" },
+        { label: "C", prompt: "c" },
+      ],
+    });
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    expect(generateOllamaResponse).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        memories: ["Global fact", "Fact for identity-1"],
+      }),
+    );
+  });
+
   it("keeps the identity snapshot on the response node through mid-stream onToken updates", async () => {
     useGraphStore.setState({
       identities: [

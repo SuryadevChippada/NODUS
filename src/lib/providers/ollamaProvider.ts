@@ -16,11 +16,17 @@ const streamLineSchema = z.object({
 function buildTranscript(
   context: { role: "prompt" | "response"; text: string }[],
   responseStyle?: string,
+  memories?: string[],
 ): string {
+  const memoryBlock =
+    memories && memories.length > 0
+      ? `Remember the following about the user:\n${memories.map((memory) => `- ${memory}`).join("\n")}\n\n`
+      : "";
   const styleLine = responseStyle
     ? `Respond in this style: ${responseStyle}\n\n`
     : "";
   return (
+    memoryBlock +
     styleLine +
     context.map((message) => `${message.role}: ${message.text}`).join("\n\n")
   );
@@ -62,7 +68,11 @@ export async function generateOllamaResponse(
 
   const lastMessage = context[context.length - 1];
   const promptText = lastMessage?.text ?? "";
-  const transcript = buildTranscript(context, options.responseStyle);
+  const transcript = buildTranscript(
+    context,
+    options.responseStyle,
+    options.memories,
+  );
 
   const genRes = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
     method: "POST",
