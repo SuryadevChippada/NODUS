@@ -22,6 +22,17 @@ export interface GenerateOptions {
   signal: AbortSignal;
   /** Delay between emitted chunks, in ms. Tests pass 0 for instant runs. */
   delayMs?: number;
+  /**
+   * Preferred Ollama model name. Ignored by generateMockResponse.
+   * generateOllamaResponse falls back to the first installed model if this
+   * is unset or names a model that isn't currently installed.
+   */
+  model?: string;
+  /**
+   * Free-text response-style directive, prepended to the Ollama transcript.
+   * Ignored by generateMockResponse.
+   */
+  responseStyle?: string;
 }
 
 export interface Provider {

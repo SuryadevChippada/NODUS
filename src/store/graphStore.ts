@@ -357,11 +357,19 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       ? { x: promptNode.position.x, y: promptNode.position.y + 160 }
       : { x: 0, y: 0 };
 
+    const activeIdentity = get().identities.find(
+      (identity) => identity.id === get().activeIdentityId,
+    );
+
     const responseNode: GraphNode = {
       id: responseNodeId,
       type: "response",
       position,
-      data: { text: "" },
+      data: {
+        text: "",
+        identityName: activeIdentity?.name,
+        identitySymbol: activeIdentity?.symbol,
+      },
     };
     const responseEdge: Edge = {
       id: crypto.randomUUID(),
@@ -401,7 +409,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       set({
         nodes: get().nodes.map((node) =>
           node.id === responseNodeId
-            ? { ...node, data: { text: node.data.text + chunk } }
+            ? {
+                ...node,
+                data: { ...node.data, text: node.data.text + chunk },
+              }
             : node,
         ),
       });
@@ -429,6 +440,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           result = await generateOllamaResponse(context, {
             signal: abortController.signal,
             onToken,
+            model: activeIdentity?.preferredModel ?? undefined,
+            responseStyle: activeIdentity?.responseStyle ?? undefined,
           });
           providerUsed = "ollama";
         } catch (error) {
@@ -458,7 +471,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           set({
             nodes: get().nodes.map((node) =>
               node.id === responseNodeId
-                ? { ...node, data: { text: "" } }
+                ? { ...node, data: { ...node.data, text: "" } }
                 : node,
             ),
           });
@@ -486,6 +499,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
             ? {
                 ...node,
                 data: {
+                  ...node.data,
                   text: result.answer,
                   suggestedBranches: result.suggestedBranches,
                 },

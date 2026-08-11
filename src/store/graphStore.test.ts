@@ -853,6 +853,47 @@ describe("useGraphStore.generateResponse provider selection", () => {
     expect(responseNode?.data.text).toBe("partial ollama answer");
     expect(useGraphStore.getState().generatingNodeId).toBeNull();
   });
+
+  it("snapshots the active identity onto the response node and passes its preferred model/style to generateOllamaResponse", async () => {
+    useGraphStore.setState({
+      identities: [
+        {
+          id: "identity-1",
+          workspaceId: "workspace-1",
+          name: "Researcher",
+          symbol: "R",
+          preferredModel: "llama3.1:latest",
+          responseStyle: "concise",
+        },
+      ],
+      activeIdentityId: "identity-1",
+    });
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    vi.mocked(generateOllamaResponse).mockResolvedValue({
+      title: "T",
+      answer: "answer",
+      suggestedBranches: [
+        { label: "A", prompt: "a" },
+        { label: "B", prompt: "b" },
+        { label: "C", prompt: "c" },
+      ],
+    });
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    expect(generateOllamaResponse).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        model: "llama3.1:latest",
+        responseStyle: "concise",
+      }),
+    );
+    const responseNode = useGraphStore
+      .getState()
+      .nodes.find((n) => n.id !== "p1");
+    expect(responseNode?.data.identityName).toBe("Researcher");
+    expect(responseNode?.data.identitySymbol).toBe("R");
+  });
 });
 
 describe("identity state and actions", () => {

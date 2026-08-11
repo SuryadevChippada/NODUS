@@ -164,4 +164,105 @@ describe("generateOllamaResponse", () => {
       }),
     ).rejects.toThrow();
   });
+
+  it("uses options.model when it's set and currently installed, instead of the first listed model", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          models: [{ name: "qwen2:7b" }, { name: "llama3.1:latest" }],
+        }),
+      })
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          '{"response":"answer","done":false}\n',
+          '{"done":true}\n',
+        ]),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          response: JSON.stringify([
+            { label: "a", prompt: "a" },
+            { label: "b", prompt: "b" },
+            { label: "c", prompt: "c" },
+          ]),
+        }),
+      });
+
+    await generateOllamaResponse(context, {
+      onToken: () => {},
+      signal: new AbortController().signal,
+      model: "llama3.1:latest",
+    });
+
+    const generateCallBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(generateCallBody.model).toBe("llama3.1:latest");
+  });
+
+  it("falls back to the first installed model when options.model isn't currently installed", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: "qwen2:7b" }] }),
+      })
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          '{"response":"answer","done":false}\n',
+          '{"done":true}\n',
+        ]),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          response: JSON.stringify([
+            { label: "a", prompt: "a" },
+            { label: "b", prompt: "b" },
+            { label: "c", prompt: "c" },
+          ]),
+        }),
+      });
+
+    await generateOllamaResponse(context, {
+      onToken: () => {},
+      signal: new AbortController().signal,
+      model: "a-model-that-was-uninstalled",
+    });
+
+    const generateCallBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(generateCallBody.model).toBe("qwen2:7b");
+  });
+
+  it("prepends a style directive to the transcript when options.responseStyle is set", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: "qwen2:7b" }] }),
+      })
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          '{"response":"answer","done":false}\n',
+          '{"done":true}\n',
+        ]),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          response: JSON.stringify([
+            { label: "a", prompt: "a" },
+            { label: "b", prompt: "b" },
+            { label: "c", prompt: "c" },
+          ]),
+        }),
+      });
+
+    await generateOllamaResponse(context, {
+      onToken: () => {},
+      signal: new AbortController().signal,
+      responseStyle: "concise and blunt",
+    });
+
+    const generateCallBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(generateCallBody.prompt).toContain("concise and blunt");
+  });
 });

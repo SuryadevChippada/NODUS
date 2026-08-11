@@ -15,10 +15,15 @@ const streamLineSchema = z.object({
 
 function buildTranscript(
   context: { role: "prompt" | "response"; text: string }[],
+  responseStyle?: string,
 ): string {
-  return context
-    .map((message) => `${message.role}: ${message.text}`)
-    .join("\n\n");
+  const styleLine = responseStyle
+    ? `Respond in this style: ${responseStyle}\n\n`
+    : "";
+  return (
+    styleLine +
+    context.map((message) => `${message.role}: ${message.text}`).join("\n\n")
+  );
 }
 
 const BRANCHES_PROMPT_TEMPLATE = (answer: string) =>
@@ -52,11 +57,12 @@ export async function generateOllamaResponse(
   if (models.length === 0) {
     throw new Error("Ollama has no models installed");
   }
-  const model = models[0];
+  const model =
+    options.model && models.includes(options.model) ? options.model : models[0];
 
   const lastMessage = context[context.length - 1];
   const promptText = lastMessage?.text ?? "";
-  const transcript = buildTranscript(context);
+  const transcript = buildTranscript(context, options.responseStyle);
 
   const genRes = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
     method: "POST",
