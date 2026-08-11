@@ -83,6 +83,11 @@ vi.mock("../lib/db", () => ({
   insertIdentity: vi.fn().mockResolvedValue(undefined),
   updateIdentity: vi.fn().mockResolvedValue(undefined),
   deleteIdentity: vi.fn().mockResolvedValue(undefined),
+  listMemories: vi.fn(),
+  insertMemory: vi.fn().mockResolvedValue(undefined),
+  updateMemory: vi.fn().mockResolvedValue(undefined),
+  deleteMemory: vi.fn().mockResolvedValue(undefined),
+  reassignMemoriesToGlobal: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../lib/providers/mockProvider", () => ({
@@ -123,6 +128,7 @@ describe("useGraphStore hydration", () => {
         responseStyle: null,
       },
     ]);
+    vi.mocked(db.listMemories).mockResolvedValue([]);
   });
 
   it("seeds the sample graph into the database on a brand-new session", async () => {
@@ -1161,5 +1167,139 @@ describe("identity state and actions", () => {
     const node = useGraphStore.getState().nodes.find((n) => n.id === newId);
     expect(node?.data.identityName).toBe("Default");
     expect(node?.data.identitySymbol).toBe("❯");
+  });
+});
+
+describe("memory state and actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetHydratePromiseForTests();
+    useGraphStore.setState({
+      workspaceId: "workspace-1",
+      identities: [
+        {
+          id: "identity-1",
+          workspaceId: "workspace-1",
+          name: "Default",
+          symbol: "❯",
+          preferredModel: null,
+          responseStyle: null,
+        },
+        {
+          id: "identity-2",
+          workspaceId: "workspace-1",
+          name: "Second",
+          symbol: "S",
+          preferredModel: null,
+          responseStyle: null,
+        },
+      ],
+      activeIdentityId: "identity-1",
+      memories: [],
+    });
+  });
+
+  it("createMemory adds a global memory and persists it", () => {
+    const newId = useGraphStore.getState().createMemory({
+      content: "Prefers concise answers",
+      identityId: null,
+    });
+    const memories = useGraphStore.getState().memories;
+    expect(memories).toHaveLength(1);
+    expect(memories[0]).toEqual({
+      id: newId,
+      workspaceId: "workspace-1",
+      identityId: null,
+      content: "Prefers concise answers",
+    });
+    expect(db.insertMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: newId,
+        content: "Prefers concise answers",
+      }),
+    );
+  });
+
+  it("createMemory adds an identity-scoped memory", () => {
+    const newId = useGraphStore.getState().createMemory({
+      content: "Prefers Python",
+      identityId: "identity-2",
+    });
+    const memory = useGraphStore
+      .getState()
+      .memories.find((m) => m.id === newId);
+    expect(memory?.identityId).toBe("identity-2");
+  });
+
+  it("updateMemory edits content and rescopes an existing memory, persisting it", () => {
+    useGraphStore.setState({
+      memories: [
+        {
+          id: "memory-1",
+          workspaceId: "workspace-1",
+          identityId: null,
+          content: "Old content",
+        },
+      ],
+    });
+    useGraphStore.getState().updateMemory("memory-1", {
+      content: "New content",
+      identityId: "identity-1",
+    });
+    const memory = useGraphStore
+      .getState()
+      .memories.find((m) => m.id === "memory-1");
+    expect(memory).toEqual({
+      id: "memory-1",
+      workspaceId: "workspace-1",
+      identityId: "identity-1",
+      content: "New content",
+    });
+    expect(db.updateMemory).toHaveBeenCalledWith(
+      "memory-1",
+      expect.objectContaining({ content: "New content" }),
+    );
+  });
+
+  it("deleteMemory removes a memory and persists the deletion", () => {
+    useGraphStore.setState({
+      memories: [
+        {
+          id: "memory-1",
+          workspaceId: "workspace-1",
+          identityId: null,
+          content: "To be deleted",
+        },
+      ],
+    });
+    useGraphStore.getState().deleteMemory("memory-1");
+    expect(useGraphStore.getState().memories).toHaveLength(0);
+    expect(db.deleteMemory).toHaveBeenCalledWith("memory-1");
+  });
+
+  it("deleteIdentity reassigns that identity's memories to global scope instead of orphaning them", () => {
+    useGraphStore.setState({
+      memories: [
+        {
+          id: "memory-1",
+          workspaceId: "workspace-1",
+          identityId: "identity-2",
+          content: "Scoped to identity-2",
+        },
+        {
+          id: "memory-2",
+          workspaceId: "workspace-1",
+          identityId: null,
+          content: "Already global",
+        },
+      ],
+    });
+
+    useGraphStore.getState().deleteIdentity("identity-2");
+
+    const memories = useGraphStore.getState().memories;
+    expect(memories.find((m) => m.id === "memory-1")?.identityId).toBeNull();
+    expect(memories.find((m) => m.id === "memory-2")?.identityId).toBeNull();
+    expect(db.reassignMemoriesToGlobal).toHaveBeenCalledWith("identity-2");
   });
 });
