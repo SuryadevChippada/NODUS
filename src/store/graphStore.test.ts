@@ -894,6 +894,100 @@ describe("useGraphStore.generateResponse provider selection", () => {
     expect(responseNode?.data.identityName).toBe("Researcher");
     expect(responseNode?.data.identitySymbol).toBe("R");
   });
+
+  it("keeps the identity snapshot on the response node through mid-stream onToken updates", async () => {
+    useGraphStore.setState({
+      identities: [
+        {
+          id: "identity-1",
+          workspaceId: "workspace-1",
+          name: "Researcher",
+          symbol: "R",
+          preferredModel: null,
+          responseStyle: null,
+        },
+      ],
+      activeIdentityId: "identity-1",
+    });
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+
+    let identitySymbolDuringStream: string | undefined;
+    vi.mocked(generateOllamaResponse).mockImplementation(
+      async (_context, options) => {
+        options.onToken("partial ");
+        identitySymbolDuringStream = useGraphStore
+          .getState()
+          .nodes.find((n) => n.id !== "p1")?.data.identitySymbol;
+        return {
+          title: "T",
+          answer: "partial answer",
+          suggestedBranches: [
+            { label: "A", prompt: "a" },
+            { label: "B", prompt: "b" },
+            { label: "C", prompt: "c" },
+          ],
+        };
+      },
+    );
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    // This must be checked mid-stream (inside onToken, above), not just
+    // after generateResponse resolves — the final completion set() also
+    // preserves the snapshot, so checking only the end state would pass
+    // even if the streaming set() silently dropped it.
+    expect(identitySymbolDuringStream).toBe("R");
+  });
+
+  it("keeps the identity snapshot on the response node through the Ollama-failure-to-mock-fallback text clear", async () => {
+    useGraphStore.setState({
+      identities: [
+        {
+          id: "identity-1",
+          workspaceId: "workspace-1",
+          name: "Researcher",
+          symbol: "R",
+          preferredModel: null,
+          responseStyle: null,
+        },
+      ],
+      activeIdentityId: "identity-1",
+    });
+    vi.mocked(checkOllamaHealth).mockResolvedValue(true);
+    vi.mocked(generateOllamaResponse).mockImplementation(
+      async (_context, options) => {
+        options.onToken("ollama partial ");
+        throw new Error("connection dropped");
+      },
+    );
+
+    let identitySymbolAfterFallbackClear: string | undefined;
+    vi.mocked(generateMockResponse).mockImplementation(
+      async (_context, options) => {
+        identitySymbolAfterFallbackClear = useGraphStore
+          .getState()
+          .nodes.find((n) => n.id !== "p1")?.data.identitySymbol;
+        options.onToken("mock ");
+        return {
+          title: "T",
+          answer: "mock answer",
+          suggestedBranches: [
+            { label: "A", prompt: "a" },
+            { label: "B", prompt: "b" },
+            { label: "C", prompt: "c" },
+          ],
+        };
+      },
+    );
+
+    await useGraphStore.getState().generateResponse("p1");
+
+    // Checked at the moment the fallback's text-clearing set() has already
+    // run (right before the mock provider's own stream starts) — this is
+    // exactly the set() call that only ever spread `text`, not the full
+    // node.data, before the fix this test guards.
+    expect(identitySymbolAfterFallbackClear).toBe("R");
+  });
 });
 
 describe("identity state and actions", () => {
