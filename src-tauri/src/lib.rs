@@ -80,6 +80,23 @@ fn migrations() -> Vec<Migration> {
         "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "add memories table",
+            sql: r#"
+            CREATE TABLE memories (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                identity_id TEXT REFERENCES identities(id) ON DELETE SET NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX idx_memories_workspace_id ON memories(workspace_id);
+            CREATE INDEX idx_memories_identity_id ON memories(identity_id);
+        "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
