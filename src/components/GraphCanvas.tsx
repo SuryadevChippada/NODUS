@@ -2,7 +2,6 @@ import {
   ReactFlow,
   Background,
   BackgroundVariant,
-  Controls,
   MiniMap,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -45,7 +44,6 @@ export function GraphCanvas() {
           size={1}
           color="#3f3f46"
         />
-        <Controls />
         <MiniMap pannable zoomable />
       </ReactFlow>
     </div>
