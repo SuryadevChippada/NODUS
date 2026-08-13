@@ -1,9 +1,4 @@
-import {
-  ReactFlow,
-  Background,
-  BackgroundVariant,
-  MiniMap,
-} from "@xyflow/react";
+import { ReactFlow, Background, BackgroundVariant } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useGraphStore } from "../store/graphStore";
 import { PromptNode } from "./nodes/PromptNode";
@@ -44,7 +39,6 @@ export function GraphCanvas() {
           size={1}
           color="#3f3f46"
         />
-        <MiniMap pannable zoomable />
       </ReactFlow>
     </div>
   );
