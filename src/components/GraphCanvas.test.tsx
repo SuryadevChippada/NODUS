@@ -16,6 +16,9 @@ vi.mock("../lib/db", () => ({
   insertIdentity: vi.fn().mockResolvedValue(undefined),
   updateIdentity: vi.fn().mockResolvedValue(undefined),
   deleteIdentity: vi.fn().mockResolvedValue(undefined),
+  insertMemory: vi.fn().mockResolvedValue(undefined),
+  updateMemory: vi.fn().mockResolvedValue(undefined),
+  deleteMemory: vi.fn().mockResolvedValue(undefined),
 }));
 
 // jsdom has no layout engine: elements always report 0 offsetWidth/Height,
@@ -82,6 +85,7 @@ beforeEach(() => {
       },
     ],
     activeIdentityId: "identity-1",
+    memories: [],
   });
 });
 

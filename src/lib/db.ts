@@ -6,6 +6,7 @@ import {
   DEFAULT_IDENTITY_NAME,
   DEFAULT_IDENTITY_SYMBOL,
 } from "../types/identity";
+import type { Memory } from "../types/memory";
 
 const DB_URL = "sqlite:nodus.db";
 
@@ -304,4 +305,72 @@ export async function updateIdentity(
 export async function deleteIdentity(id: string): Promise<void> {
   const db = await getDb();
   await db.execute("DELETE FROM identities WHERE id = $1", [id]);
+}
+
+interface MemoryRow {
+  id: string;
+  workspace_id: string;
+  identity_id: string | null;
+  content: string;
+}
+
+function rowToMemory(row: MemoryRow): Memory {
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    identityId: row.identity_id,
+    content: row.content,
+  };
+}
+
+export async function listMemories(workspaceId: string): Promise<Memory[]> {
+  const db = await getDb();
+  const rows = await db.select<MemoryRow[]>(
+    "SELECT id, workspace_id, identity_id, content FROM memories WHERE workspace_id = $1 ORDER BY created_at ASC",
+    [workspaceId],
+  );
+  return rows.map(rowToMemory);
+}
+
+export async function insertMemory(memory: Memory): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "INSERT INTO memories (id, workspace_id, identity_id, content, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
+    [
+      memory.id,
+      memory.workspaceId,
+      memory.identityId,
+      memory.content,
+      now,
+      now,
+    ],
+  );
+}
+
+export async function updateMemory(
+  id: string,
+  updates: { content: string; identityId: string | null },
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE memories SET content = $1, identity_id = $2, updated_at = $3 WHERE id = $4",
+    [updates.content, updates.identityId, now, id],
+  );
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM memories WHERE id = $1", [id]);
+}
+
+export async function reassignMemoriesToGlobal(
+  identityId: string,
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE memories SET identity_id = NULL WHERE identity_id = $1",
+    [identityId],
+  );
 }

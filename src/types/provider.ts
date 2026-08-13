@@ -33,6 +33,13 @@ export interface GenerateOptions {
    * Ignored by generateMockResponse.
    */
   responseStyle?: string;
+  /**
+   * User-authored long-term memory content relevant to this generation
+   * (global memories plus the active identity's). Ignored by
+   * generateMockResponse. Never populated automatically — every entry
+   * originates from explicit user input.
+   */
+  memories?: string[];
 }
 
 export interface Provider {

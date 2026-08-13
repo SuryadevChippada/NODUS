@@ -31,6 +31,11 @@ import {
   insertIdentity,
   updateIdentity,
   deleteIdentity,
+  listMemories,
+  insertMemory,
+  updateMemory,
+  deleteMemory,
+  reassignMemoriesToGlobal,
 } from "./db";
 
 beforeEach(() => {
@@ -370,5 +375,81 @@ describe("loadSessionGraph with identity snapshot", () => {
     const { nodes } = await loadSessionGraph("session-1");
     expect(nodes[0].data.identityName).toBeUndefined();
     expect(nodes[0].data.identitySymbol).toBeUndefined();
+  });
+});
+
+describe("listMemories", () => {
+  it("maps rows into Memory shape", async () => {
+    mockSelect.mockResolvedValueOnce([
+      {
+        id: "memory-1",
+        workspace_id: "workspace-1",
+        identity_id: null,
+        content: "User prefers concise answers",
+      },
+    ]);
+    const memories = await listMemories("workspace-1");
+    expect(memories).toEqual([
+      {
+        id: "memory-1",
+        workspaceId: "workspace-1",
+        identityId: null,
+        content: "User prefers concise answers",
+      },
+    ]);
+  });
+
+  it("maps a non-null identity_id through as identityId", async () => {
+    mockSelect.mockResolvedValueOnce([
+      {
+        id: "memory-1",
+        workspace_id: "workspace-1",
+        identity_id: "identity-1",
+        content: "Prefers Python over JavaScript",
+      },
+    ]);
+    const memories = await listMemories("workspace-1");
+    expect(memories[0].identityId).toBe("identity-1");
+  });
+});
+
+describe("memory write operations use parameterized SQL", () => {
+  it("insertMemory passes values as bind params, not string-interpolated", async () => {
+    await insertMemory({
+      id: "memory-1",
+      workspaceId: "workspace-1",
+      identityId: null,
+      content: "Lives in Berlin",
+    });
+    const [sql, values] = mockExecute.mock.calls[0];
+    expect(sql).not.toContain("Berlin");
+    expect(values).toContain("Lives in Berlin");
+  });
+
+  it("updateMemory updates content and identity scope for the given id", async () => {
+    await updateMemory("memory-1", {
+      content: "Lives in Munich now",
+      identityId: "identity-2",
+    });
+    const [sql, values] = mockExecute.mock.calls[0];
+    expect(sql.toUpperCase()).toContain("UPDATE");
+    expect(values).toEqual(
+      expect.arrayContaining(["Lives in Munich now", "identity-2", "memory-1"]),
+    );
+  });
+
+  it("deleteMemory deletes by id", async () => {
+    await deleteMemory("memory-1");
+    const [sql, values] = mockExecute.mock.calls[0];
+    expect(sql.toUpperCase()).toContain("DELETE");
+    expect(values).toEqual(["memory-1"]);
+  });
+
+  it("reassignMemoriesToGlobal sets identity_id to NULL for every memory owned by that identity", async () => {
+    await reassignMemoriesToGlobal("identity-1");
+    const [sql, values] = mockExecute.mock.calls[0];
+    expect(sql.toUpperCase()).toContain("UPDATE");
+    expect(sql).toContain("identity_id");
+    expect(values).toEqual(["identity-1"]);
   });
 });

@@ -265,4 +265,70 @@ describe("generateOllamaResponse", () => {
     const generateCallBody = JSON.parse(mockFetch.mock.calls[1][1].body);
     expect(generateCallBody.prompt).toContain("concise and blunt");
   });
+
+  it("prepends active memories to the transcript when options.memories is set", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: "qwen2:7b" }] }),
+      })
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          '{"response":"answer","done":false}\n',
+          '{"done":true}\n',
+        ]),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          response: JSON.stringify([
+            { label: "a", prompt: "a" },
+            { label: "b", prompt: "b" },
+            { label: "c", prompt: "c" },
+          ]),
+        }),
+      });
+
+    await generateOllamaResponse(context, {
+      onToken: () => {},
+      signal: new AbortController().signal,
+      memories: ["Lives in Berlin", "Prefers Python"],
+    });
+
+    const generateCallBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(generateCallBody.prompt).toContain("Lives in Berlin");
+    expect(generateCallBody.prompt).toContain("Prefers Python");
+  });
+
+  it("doesn't add a memory block to the transcript when options.memories is empty or unset", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ name: "qwen2:7b" }] }),
+      })
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          '{"response":"answer","done":false}\n',
+          '{"done":true}\n',
+        ]),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          response: JSON.stringify([
+            { label: "a", prompt: "a" },
+            { label: "b", prompt: "b" },
+            { label: "c", prompt: "c" },
+          ]),
+        }),
+      });
+
+    await generateOllamaResponse(context, {
+      onToken: () => {},
+      signal: new AbortController().signal,
+    });
+
+    const generateCallBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(generateCallBody.prompt).not.toContain("Remember the following");
+  });
 });

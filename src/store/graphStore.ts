@@ -12,6 +12,7 @@ import {
 import { sampleNodes, sampleEdges } from "../lib/sampleGraph";
 import type { GraphNode, GraphNodeData } from "../types/graph";
 import type { Identity } from "../types/identity";
+import type { Memory } from "../types/memory";
 import * as db from "../lib/db";
 import {
   getChildIds,
@@ -51,6 +52,7 @@ interface GraphState {
   edges: Edge[];
   identities: Identity[];
   activeIdentityId: string | null;
+  memories: Memory[];
   hydrate: () => Promise<void>;
   onNodesChange: (changes: NodeChange<Node<GraphNodeData>>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -80,6 +82,15 @@ interface GraphState {
     },
   ) => void;
   deleteIdentity: (id: string) => void;
+  createMemory: (input: {
+    content: string;
+    identityId: string | null;
+  }) => string;
+  updateMemory: (
+    id: string,
+    updates: { content: string; identityId: string | null },
+  ) => void;
+  deleteMemory: (id: string) => void;
 }
 
 export const useGraphStore = create<GraphState>((set, get) => ({
@@ -89,6 +100,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   edges: sampleEdges,
   identities: [],
   activeIdentityId: null,
+  memories: [],
   generatingNodeId: null,
   lastGenerationProvider: null,
 
@@ -100,6 +112,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
         const defaultIdentity = await db.ensureDefaultIdentity(workspaceId);
         const identities = await db.listIdentities(workspaceId);
+        const memories = await db.listMemories(workspaceId);
 
         if (isNewSession) {
           for (const node of sampleNodes) {
@@ -115,6 +128,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
             edges: sampleEdges,
             identities,
             activeIdentityId: defaultIdentity.id,
+            memories,
           });
           return;
         }
@@ -127,6 +141,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           edges,
           identities,
           activeIdentityId: defaultIdentity.id,
+          memories,
         });
       })();
     }
@@ -360,6 +375,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const activeIdentity = get().identities.find(
       (identity) => identity.id === get().activeIdentityId,
     );
+    const activeMemories = get()
+      .memories.filter(
+        (memory) =>
+          memory.identityId === null ||
+          memory.identityId === activeIdentity?.id,
+      )
+      .map((memory) => memory.content);
 
     const responseNode: GraphNode = {
       id: responseNodeId,
@@ -442,6 +464,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
             onToken,
             model: activeIdentity?.preferredModel ?? undefined,
             responseStyle: activeIdentity?.responseStyle ?? undefined,
+            memories: activeMemories,
           });
           providerUsed = "ollama";
         } catch (error) {
@@ -592,8 +615,50 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     if (get().activeIdentityId === id) {
       set({ activeIdentityId: remaining[0].id });
     }
+    set({
+      memories: get().memories.map((memory) =>
+        memory.identityId === id ? { ...memory, identityId: null } : memory,
+      ),
+    });
+    db.reassignMemoriesToGlobal(id).catch((error) =>
+      console.error("Failed to reassign memories to global scope", error),
+    );
     db.deleteIdentity(id).catch((error) =>
       console.error("Failed to delete identity", error),
+    );
+  },
+
+  createMemory: (input) => {
+    const workspaceId = get().workspaceId;
+    if (!workspaceId) return "";
+    const memory: Memory = {
+      id: crypto.randomUUID(),
+      workspaceId,
+      identityId: input.identityId,
+      content: input.content,
+    };
+    set({ memories: [...get().memories, memory] });
+    db.insertMemory(memory).catch((error) =>
+      console.error("Failed to persist new memory", error),
+    );
+    return memory.id;
+  },
+
+  updateMemory: (id, updates) => {
+    set({
+      memories: get().memories.map((memory) =>
+        memory.id === id ? { ...memory, ...updates } : memory,
+      ),
+    });
+    db.updateMemory(id, updates).catch((error) =>
+      console.error("Failed to persist memory update", error),
+    );
+  },
+
+  deleteMemory: (id) => {
+    set({ memories: get().memories.filter((memory) => memory.id !== id) });
+    db.deleteMemory(id).catch((error) =>
+      console.error("Failed to delete memory", error),
     );
   },
 }));
