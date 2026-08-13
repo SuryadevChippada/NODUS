@@ -59,6 +59,37 @@ describe("MemoryPanel", () => {
     expect(screen.getByText(/lives in berlin/i)).toBeInTheDocument();
   });
 
+  it("edits an existing memory via the panel instead of creating a new one", () => {
+    useGraphStore.setState({
+      memories: [
+        {
+          id: "memory-1",
+          workspaceId: "workspace-1",
+          identityId: "identity-1",
+          content: "Old content",
+        },
+      ],
+    });
+    render(<MemoryPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /memories/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+
+    expect(screen.getByPlaceholderText(/remember something/i)).toHaveValue(
+      "Old content",
+    );
+    expect(screen.getByRole("combobox")).toHaveValue("identity-1");
+
+    fireEvent.change(screen.getByPlaceholderText(/remember something/i), {
+      target: { value: "New content" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save memory/i }));
+
+    const memories = useGraphStore.getState().memories;
+    expect(memories).toHaveLength(1); // no duplicate created
+    expect(memories[0].content).toBe("New content");
+    expect(memories[0].identityId).toBe("identity-1");
+  });
+
   it("deletes a memory", () => {
     useGraphStore.setState({
       memories: [
