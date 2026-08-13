@@ -37,6 +37,7 @@ export function GraphCanvas() {
         onConnect={onConnect}
         nodeTypes={nodeTypes}
         fitView
+        proOptions={{ hideAttribution: true }}
       >
         <Background
           variant={BackgroundVariant.Dots}
