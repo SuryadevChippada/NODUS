@@ -10,6 +10,7 @@ import { useGraphStore } from "../store/graphStore";
 import { PromptNode } from "./nodes/PromptNode";
 import { ResponseNode } from "./nodes/ResponseNode";
 import { IdentityBar } from "./IdentityBar";
+import { MemoryPanel } from "./MemoryPanel";
 
 const nodeTypes = { prompt: PromptNode, response: ResponseNode };
 
@@ -27,6 +28,7 @@ export function GraphCanvas() {
         + New
       </button>
       <IdentityBar />
+      <MemoryPanel />
       <ReactFlow
         nodes={nodes}
         edges={edges}
