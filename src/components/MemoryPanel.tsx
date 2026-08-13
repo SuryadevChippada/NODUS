@@ -30,7 +30,17 @@ export function MemoryPanel() {
   const submitDraft = () => {
     const content = draftContent.trim();
     if (content.length === 0) return;
-    const identityId = draftIdentityId.length > 0 ? draftIdentityId : null;
+    // Validate against the CURRENT identities list, not just non-empty: the
+    // draft is separate React state that nothing reconciles, so if the
+    // identity this draft was scoped to gets deleted elsewhere while the
+    // form is still open, draftIdentityId would otherwise still name a
+    // dead id and silently write the identity back onto the memory —
+    // undoing deleteIdentity's reassignment-to-global behavior.
+    const identityId = identities.some(
+      (identity) => identity.id === draftIdentityId,
+    )
+      ? draftIdentityId
+      : null;
 
     if (editingId) {
       updateMemory(editingId, { content, identityId });

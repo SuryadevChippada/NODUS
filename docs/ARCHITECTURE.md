@@ -6,10 +6,12 @@ Pre-alpha. Implemented so far: the Tauri + React + TypeScript shell, the
 interactive node graph canvas, SQLite persistence, node creation /
 branching / editing / deletion, a pure ancestor-chain context builder, a
 deterministic mock AI provider, real streaming generation via Ollama with
-automatic mock-provider fallback, and local user identities (name, prompt
+automatic mock-provider fallback, local user identities (name, prompt
 symbol, preferred model, response style) with a per-node snapshot that
-survives editing or deleting the identity later. See
-[ROADMAP.md](../ROADMAP.md) for what's next.
+survives editing or deleting the identity later, and user-controlled
+long-term memory (global or per-identity facts that genuinely reach every
+matching Ollama generation as context). See [ROADMAP.md](../ROADMAP.md)
+for what's next.
 
 ## Stack (verified working versions, 2026-08-11, macOS / Apple Silicon)
 
@@ -51,25 +53,67 @@ SQLite tables (migrations in `src-tauri/src/lib.rs`):
   "Default" / "❯" on first access if none exist) — enforced at the store
   layer (`deleteIdentity` refuses below 2 remaining), not by a DB
   constraint.
+- `memories` — `id`, `workspace_id`, `identity_id` (nullable), `content`,
+  timestamps. User-authored long-term facts, never auto-generated (see
+  below). `identity_id` is a genuine live reference (see below), not a
+  snapshot.
 
 SQLite's `ON DELETE CASCADE` is declared on the foreign keys for
 documentation but **not enforced** — this Tauri SQL plugin version
 exposes no way to turn on `PRAGMA foreign_keys` per connection. Any code
 path that deletes a node must explicitly delete its edges too; two such
 paths already exist in `src/store/graphStore.ts`
-(`deleteNodeWithDescendants`, `deleteNodeAndReparentChildren`) and are
-the reference implementation for this constraint.
+(`deleteNodeWithDescendants`, `deleteNodeAndReparentChildren`). A third
+explicit-cleanup path exists for `deleteIdentity`: it reassigns that
+identity's memories to global scope (`identity_id = NULL`) via
+`db.reassignMemoriesToGlobal`, rather than leaving them silently orphaned
+on a since-deleted identity. All three are the reference implementation
+for this constraint — any future code path that deletes a workspace,
+identity, or node must audit what else references it and clean up
+explicitly, since the DB will not do it automatically.
 
-`nodes.identity_name`/`identity_symbol` are a deliberate **snapshot, not
-a live reference** — there is no foreign key from `nodes` to
-`identities`, and never should be. They're set once, at node-creation
-time, to whatever identity is active then; editing or deleting that
-identity afterward must never change how an already-created node
-renders. (ROADMAP.md's phase description also mentions a prompt
-"template" alongside "symbol" — no more specific spec text exists for
-that beyond the symbol/model/style fields actually built; a literal
-per-identity prompt template, if wanted, is unbuilt scope for a later
-pass, not a bug in this one.)
+Two different relationship shapes exist between `nodes`/`memories` and
+`identities`, deliberately:
+
+- `nodes.identity_name`/`identity_symbol` are a **snapshot, not a live
+  reference** — no foreign key from `nodes` to `identities`, and never
+  should be. Set once at node-creation time; editing or deleting that
+  identity afterward must never change how an already-created node
+  renders. (ROADMAP.md's phase description also mentions a prompt
+  "template" alongside "symbol" — no more specific spec text exists for
+  that beyond the symbol/model/style fields actually built; a literal
+  per-identity prompt template, if wanted, is unbuilt scope for a later
+  pass, not a bug in this one.)
+- `memories.identity_id` is the opposite on purpose — a **genuine live
+  reference**. A memory scoped to an identity keeps applying as long as
+  that identity exists; deleting the identity reassigns the memory to
+  global scope rather than destroying it. Any UI that lets a memory's
+  scope be edited must re-validate the target identity still exists at
+  submit time, not just that a value was selected — a stale in-memory
+  form draft referencing an identity deleted elsewhere is a real failure
+  mode here (caught in Phase 8's final review), not a hypothetical one.
+
+## Memory and generation
+
+Every generation computes "active memories" — global memories
+(`identity_id IS NULL`) plus the current identity's own — and sends their
+full content to Ollama as a "remember the following" block prepended to
+the transcript (`src/lib/providers/ollamaProvider.ts`'s `buildTranscript`,
+before the `responseStyle` line). No summarization, embedding, or
+relevance ranking: every active memory goes in full, every time.
+
+**No automatic capture, by design and by construction**: the only
+production code paths that ever create or edit a memory are the memory
+panel's explicit form-submit handlers (`src/components/MemoryPanel.tsx`).
+Nothing in the generation pipeline, node storage, or provider code writes
+to memory — it is strictly read-only there. This is the phase's core
+privacy constraint, and it is also the app's only defense against
+persistent prompt injection: memory content is sent to Ollama verbatim
+and unsandboxed, same as `responseStyle` already is, which is a
+non-issue only because both are exclusively user-authored in a
+local-first, single-user app with no import/sync/sharing channel. If a
+future phase ever adds any form of automatic memory capture from
+conversation content, this stops being a non-issue.
 
 ## AI provider architecture
 
